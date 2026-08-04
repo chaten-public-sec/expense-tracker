@@ -1,0 +1,240 @@
+const Expense = require('../models/Expense');
+const GroupMember = require('../models/GroupMember');
+const Activity = require('../models/Activity');
+const { uploadToCloudinary } = require('../config/cloudinary');
+
+// Helper to compute split details array
+const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) => {
+  let targetUserIds = [];
+
+  if (splitType === 'everyone' || !splitBetween || splitBetween.length === 0) {
+    const members = await GroupMember.find({ groupId });
+    targetUserIds = members.map(m => m.userId.toString());
+  } else {
+    targetUserIds = splitBetween.map(id => id.toString());
+  }
+
+  if (targetUserIds.length === 0) {
+    throw new Error('At least one member must be selected for expense split');
+  }
+
+  const individualShare = Math.round((amount / targetUserIds.length) * 100) / 100;
+
+  const splitDetails = targetUserIds.map(uId => ({
+    user: uId,
+    share: individualShare
+  }));
+
+  return { splitBetween: targetUserIds, splitDetails };
+};
+
+// @desc Create a new expense
+// @route POST /api/expenses
+const createExpense = async (req, res) => {
+  try {
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl } = req.body;
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ message: 'Expense title is required' });
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ message: 'Valid expense amount is required' });
+    }
+
+    // Find active group
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    const groupId = membership.groupId;
+    const payerId = paidBy || req.user._id.toString();
+
+    const { splitBetween: finalSplitBetween, splitDetails } = await computeSplits(
+      groupId,
+      numAmount,
+      splitType || 'everyone',
+      splitBetween,
+      payerId
+    );
+
+    const expense = await Expense.create({
+      groupId,
+      title: title.trim(),
+      amount: numAmount,
+      paidBy: payerId,
+      splitType: splitType || 'everyone',
+      splitBetween: finalSplitBetween,
+      splitDetails,
+      paymentMode: paymentMode || 'cash',
+      screenshotUrl: screenshotUrl || null,
+      notes: notes || '',
+      date: new Date()
+    });
+
+    const populatedExpense = await Expense.findById(expense._id)
+      .populate('paidBy', 'fullName email phone')
+      .populate('splitDetails.user', 'fullName email phone');
+
+    // Create activity log
+    await Activity.create({
+      groupId,
+      user: req.user._id,
+      action: `added "${expense.title}" ₹${expense.amount}`
+    });
+
+    return res.status(201).json(populatedExpense);
+  } catch (error) {
+    console.error('Create Expense Error:', error);
+    return res.status(500).json({ message: error.message || 'Server error creating expense' });
+  }
+};
+
+// @desc Get all expenses for active group
+// @route GET /api/expenses
+const getExpenses = async (req, res) => {
+  try {
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    const expenses = await Expense.find({ groupId: membership.groupId })
+      .sort({ date: -1 })
+      .populate('paidBy', 'fullName email phone')
+      .populate('splitDetails.user', 'fullName email phone');
+
+    return res.json(expenses);
+  } catch (error) {
+    console.error('Get Expenses Error:', error);
+    return res.status(500).json({ message: 'Server error fetching expenses' });
+  }
+};
+
+// @desc Get single expense details
+// @route GET /api/expenses/:id
+const getExpenseById = async (req, res) => {
+  try {
+    const expense = await Expense.findById(req.params.id)
+      .populate('paidBy', 'fullName email phone')
+      .populate('splitDetails.user', 'fullName email phone');
+
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+
+    return res.json(expense);
+  } catch (error) {
+    console.error('Get Expense By Id Error:', error);
+    return res.status(500).json({ message: 'Server error fetching expense details' });
+  }
+};
+
+// @desc Update expense
+// @route PUT /api/expenses/:id
+const updateExpense = async (req, res) => {
+  try {
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl } = req.body;
+    const expense = await Expense.findById(req.params.id);
+
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+
+    const numAmount = amount ? parseFloat(amount) : expense.amount;
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ message: 'Valid expense amount is required' });
+    }
+
+    const payerId = paidBy || expense.paidBy.toString();
+
+    const { splitBetween: finalSplitBetween, splitDetails } = await computeSplits(
+      expense.groupId,
+      numAmount,
+      splitType || expense.splitType,
+      splitBetween || expense.splitBetween,
+      payerId
+    );
+
+    expense.title = title !== undefined ? title.trim() : expense.title;
+    expense.amount = numAmount;
+    expense.paidBy = payerId;
+    expense.splitType = splitType || expense.splitType;
+    expense.splitBetween = finalSplitBetween;
+    expense.splitDetails = splitDetails;
+    expense.paymentMode = paymentMode || expense.paymentMode;
+    if (screenshotUrl !== undefined) expense.screenshotUrl = screenshotUrl;
+    if (notes !== undefined) expense.notes = notes;
+
+    await expense.save();
+
+    const updatedExpense = await Expense.findById(expense._id)
+      .populate('paidBy', 'fullName email phone')
+      .populate('splitDetails.user', 'fullName email phone');
+
+    await Activity.create({
+      groupId: expense.groupId,
+      user: req.user._id,
+      action: `updated expense "${expense.title}"`
+    });
+
+    return res.json(updatedExpense);
+  } catch (error) {
+    console.error('Update Expense Error:', error);
+    return res.status(500).json({ message: error.message || 'Server error updating expense' });
+  }
+};
+
+// @desc Delete expense
+// @route DELETE /api/expenses/:id
+const deleteExpense = async (req, res) => {
+  try {
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+
+    const title = expense.title;
+    const groupId = expense.groupId;
+
+    await Expense.deleteOne({ _id: expense._id });
+
+    await Activity.create({
+      groupId,
+      user: req.user._id,
+      action: `deleted expense "${title}"`
+    });
+
+    return res.json({ message: 'Expense deleted successfully' });
+  } catch (error) {
+    console.error('Delete Expense Error:', error);
+    return res.status(500).json({ message: 'Server error deleting expense' });
+  }
+};
+
+// @desc Upload screenshot to Cloudinary
+// @route POST /api/expenses/upload
+const uploadScreenshot = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file uploaded' });
+    }
+
+    const uploadResult = await uploadToCloudinary(req.file.buffer);
+    return res.json({ imageUrl: uploadResult.secure_url });
+  } catch (error) {
+    console.error('Upload Screenshot Error:', error);
+    return res.status(500).json({ message: 'Failed to upload screenshot image' });
+  }
+};
+
+module.exports = {
+  createExpense,
+  getExpenses,
+  getExpenseById,
+  updateExpense,
+  deleteExpense,
+  uploadScreenshot
+};
