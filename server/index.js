@@ -26,38 +26,70 @@ const connectDB = require('./config/db');
 
 const app = express();
 
+// Trust reverse proxy for Render / Vercel
+app.set('trust proxy', 1);
+
 // Disable x-powered-by header for security
 app.disable('x-powered-by');
 
-// Environment-driven CORS configuration
-const isDev = (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
-const clientUrl = process.env.CLIENT_URL;
+// Helper to normalize origin URLs (trim whitespace & remove trailing slashes)
+const normalizeOrigin = (url) => {
+  if (!url) return '';
+  return url.trim().replace(/\/+$/, '');
+};
 
-// Support comma-separated origins if multiple frontend URLs are configured
-const configuredOrigins = clientUrl ? clientUrl.split(',').map(url => url.trim()) : [];
+const isDev = (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
+const rawClientUrl = process.env.CLIENT_URL || '';
+
+// Process configured origins from environment variables (handles single or comma-separated URLs)
+const configuredOrigins = rawClientUrl
+  .split(',')
+  .map(url => normalizeOrigin(url))
+  .filter(Boolean);
+
+const devOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000'
+];
 
 const allowedOrigins = isDev
-  ? [
-      ...configuredOrigins,
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://localhost:5173',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:5173'
-    ].filter(Boolean)
+  ? Array.from(new Set([...configuredOrigins, ...devOrigins]))
   : configuredOrigins;
 
-app.use(cors({
+// Complete production-grade CORS options configuration
+const corsOptions = {
   origin: function (origin, callback) {
-    // Allow non-browser requests (mobile apps, curl, server-to-server) or matched origins
-    if (!origin || allowedOrigins.includes(origin) || isDev) {
+    // Allow non-browser / server-to-server / mobile requests without Origin header
+    if (!origin) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS restriction: Origin ${origin} not permitted`));
+
+    const normalizedReqOrigin = normalizeOrigin(origin);
+
+    if (
+      isDev ||
+      allowedOrigins.includes(normalizedReqOrigin) ||
+      (rawClientUrl && normalizedReqOrigin === normalizeOrigin(rawClientUrl))
+    ) {
+      return callback(null, true);
+    }
+
+    console.warn(`[CORS Warning] Request blocked from unpermitted origin: "${origin}"`);
+    return callback(null, false);
   },
-  credentials: true
-}));
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200 // Legacy browser support for 204 preflight status
+};
+
+// 3. Register CORS middleware at the absolute top of the middleware stack
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -76,11 +108,12 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// Health check endpoint for Render / Uptime monitors
+// Health check endpoint for Render / Vercel uptime checks
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     environment: process.env.NODE_ENV || 'development',
+    allowedOrigins: isDev ? 'development (all permitted)' : allowedOrigins,
     message: 'Expense Tracker API Server is running smoothly',
     database: 'MongoDB Atlas Connected',
     timestamp: new Date().toISOString()
@@ -102,6 +135,7 @@ const startServer = async () => {
   await connectDB();
   const server = app.listen(PORT, () => {
     console.log(`🚀 [Express] Server running on port ${PORT} [Mode: ${process.env.NODE_ENV || 'development'}]`);
+    console.log(`🌐 [CORS] Allowed Origins: ${isDev ? 'Development (Localhost + CLIENT_URL)' : allowedOrigins.join(', ')}`);
   });
 
   // Graceful shutdown handling for Render / Docker containers
