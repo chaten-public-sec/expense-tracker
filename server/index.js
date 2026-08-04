@@ -1,7 +1,7 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// 1. Initialize dotenv at the VERY TOP before any other modules load environment variables
+// 1. Initialize dotenv at the VERY TOP before any other module imports
 const envPath = path.resolve(__dirname, '.env');
 const dotenvResult = dotenv.config({ path: envPath });
 
@@ -26,8 +26,39 @@ const connectDB = require('./config/db');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Disable x-powered-by header for security
+app.disable('x-powered-by');
+
+// Environment-driven CORS configuration
+const isDev = (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
+const clientUrl = process.env.CLIENT_URL;
+
+// Support comma-separated origins if multiple frontend URLs are configured
+const configuredOrigins = clientUrl ? clientUrl.split(',').map(url => url.trim()) : [];
+
+const allowedOrigins = isDev
+  ? [
+      ...configuredOrigins,
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:5173'
+    ].filter(Boolean)
+  : configuredOrigins;
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow non-browser requests (mobile apps, curl, server-to-server) or matched origins
+    if (!origin || allowedOrigins.includes(origin) || isDev) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS restriction: Origin ${origin} not permitted`));
+  },
+  credentials: true
+}));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -45,16 +76,18 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// Health check endpoint
+// Health check endpoint for Render / Uptime monitors
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
     message: 'Expense Tracker API Server is running smoothly',
-    database: 'MongoDB Atlas Connected'
+    database: 'MongoDB Atlas Connected',
+    timestamp: new Date().toISOString()
   });
 });
 
-// Error handling middleware
+// Production Error handling middleware
 app.use((err, req, res, next) => {
   console.error('[Error Middleware]:', err.stack);
   res.status(err.status || 500).json({
@@ -64,12 +97,28 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-// Start Server
+// Start Server after DB Connection attempt
 const startServer = async () => {
   await connectDB();
-  app.listen(PORT, () => {
-    console.log(`🚀 [Express] Server running on port ${PORT}`);
+  const server = app.listen(PORT, () => {
+    console.log(`🚀 [Express] Server running on port ${PORT} [Mode: ${process.env.NODE_ENV || 'development'}]`);
   });
+
+  // Graceful shutdown handling for Render / Docker containers
+  const gracefulShutdown = (signal) => {
+    console.log(`\n[Server] ${signal} signal received. Closing HTTP server gracefully...`);
+    server.close(() => {
+      console.log('[Server] HTTP server closed. Disconnecting database...');
+      const mongoose = require('mongoose');
+      mongoose.connection.close(false, () => {
+        console.log('[Server] MongoDB connection closed cleanly. Exiting process.');
+        process.exit(0);
+      });
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 };
 
 startServer();
