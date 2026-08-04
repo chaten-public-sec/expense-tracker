@@ -35,7 +35,7 @@ app.disable('x-powered-by');
 // Helper to normalize origin URLs (trim whitespace & remove trailing slashes)
 const normalizeOrigin = (url) => {
   if (!url) return '';
-  return url.trim().replace(/\/+$/, '');
+  return url.trim().replace(/\/+$/, '').toLowerCase();
 };
 
 const isDev = (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
@@ -60,7 +60,7 @@ const allowedOrigins = isDev
   ? Array.from(new Set([...configuredOrigins, ...devOrigins]))
   : configuredOrigins;
 
-// Complete production-grade CORS options configuration
+// Production-grade CORS options configuration
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow non-browser / server-to-server / mobile requests without Origin header
@@ -70,11 +70,12 @@ const corsOptions = {
 
     const normalizedReqOrigin = normalizeOrigin(origin);
 
-    if (
-      isDev ||
-      allowedOrigins.includes(normalizedReqOrigin) ||
-      (rawClientUrl && normalizedReqOrigin === normalizeOrigin(rawClientUrl))
-    ) {
+    // Permissive matching for all Vercel deployment & preview URLs (*.vercel.app)
+    const isVercelDomain = normalizedReqOrigin.endsWith('.vercel.app') || normalizedReqOrigin.includes('.vercel.app');
+    const isExplicitlyAllowed = allowedOrigins.includes(normalizedReqOrigin);
+    const matchesClientUrl = configuredOrigins.some(u => u === normalizedReqOrigin);
+
+    if (isDev || isExplicitlyAllowed || matchesClientUrl || isVercelDomain) {
       return callback(null, true);
     }
 
@@ -84,7 +85,7 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
-  optionsSuccessStatus: 200 // Legacy browser support for 204 preflight status
+  optionsSuccessStatus: 200
 };
 
 // 3. Register CORS middleware at the absolute top of the middleware stack
@@ -101,12 +102,19 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 
-// API Routes
+// API Routes registered under /api
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+
+// Fallback Route Aliases (Handles requests if /api prefix was omitted in client config)
+app.use('/auth', authRoutes);
+app.use('/groups', groupRoutes);
+app.use('/expenses', expenseRoutes);
+app.use('/settlements', settlementRoutes);
+app.use('/dashboard', dashboardRoutes);
 
 // Health check endpoint for Render / Vercel uptime checks
 app.get('/api/health', (req, res) => {
@@ -118,6 +126,10 @@ app.get('/api/health', (req, res) => {
     database: 'MongoDB Atlas Connected',
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'API is healthy' });
 });
 
 // Production Error handling middleware
@@ -135,7 +147,7 @@ const startServer = async () => {
   await connectDB();
   const server = app.listen(PORT, () => {
     console.log(`🚀 [Express] Server running on port ${PORT} [Mode: ${process.env.NODE_ENV || 'development'}]`);
-    console.log(`🌐 [CORS] Allowed Origins: ${isDev ? 'Development (Localhost + CLIENT_URL)' : allowedOrigins.join(', ')}`);
+    console.log(`🌐 [CORS] Allowed Origins: ${isDev ? 'Development' : allowedOrigins.join(', ')}`);
   });
 
   // Graceful shutdown handling for Render / Docker containers

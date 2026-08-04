@@ -1,7 +1,13 @@
 import axios from 'axios';
 
-// Centralized API Base URL driven strictly by environment variables
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+// Ensure base URL always includes the required '/api' path suffix regardless of how VITE_API_URL is configured
+const getBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  if (!envUrl) return '/api';
+  return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
+};
+
+const API_BASE_URL = getBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
