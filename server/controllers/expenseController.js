@@ -170,6 +170,21 @@ const updateExpense = async (req, res) => {
       return res.status(404).json({ message: 'Expense not found' });
     }
 
+    // Authorization check: Only payer or group admin can update expense
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    const isOwner = expense.paidBy.toString() === req.user._id.toString();
+    const isAdmin = membership.role === 'creator' && membership.groupId.toString() === expense.groupId.toString();
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        message: 'Forbidden: Only the person who added this expense or the group admin can edit it.'
+      });
+    }
+
     const numAmount = amount ? parseFloat(amount) : expense.amount;
     if (isNaN(numAmount) || numAmount <= 0) {
       return res.status(400).json({ message: 'Valid expense amount is required' });
@@ -237,6 +252,21 @@ const deleteExpense = async (req, res) => {
     const expense = await Expense.findById(req.params.id);
     if (!expense) {
       return res.status(404).json({ message: 'Expense not found' });
+    }
+
+    // Authorization check: Only payer or group admin can delete expense
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    const isOwner = expense.paidBy.toString() === req.user._id.toString();
+    const isAdmin = membership.role === 'creator' && membership.groupId.toString() === expense.groupId.toString();
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        message: 'Forbidden: Only the person who added this expense or the group admin can delete it.'
+      });
     }
 
     const title = expense.title;

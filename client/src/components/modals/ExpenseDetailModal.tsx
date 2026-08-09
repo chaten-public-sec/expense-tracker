@@ -8,20 +8,19 @@ import {
   Typography,
   Popconfirm,
   Image,
-  Divider,
-  List,
+  Tooltip,
 } from 'antd';
 import {
   EditOutlined,
   DeleteOutlined,
   CalendarOutlined,
-  CreditCardOutlined,
   UserOutlined,
-  FileImageOutlined,
   InfoCircleOutlined,
   DollarCircleOutlined,
   MobileOutlined,
+  LockOutlined,
 } from '@ant-design/icons';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../ui/Toast';
 import { Expense } from '../../types';
 import api from '../../services/api';
@@ -43,10 +42,14 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
   onEdit,
   onExpenseDeleted,
 }) => {
+  const { user, userRole } = useAuth();
   const { showToast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
 
   if (!expense) return null;
+
+  const payerId = typeof expense.paidBy === 'string' ? expense.paidBy : expense.paidBy?._id;
+  const isOwnerOrAdmin = user && (user._id === payerId || userRole === 'creator');
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -92,30 +95,47 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
       }
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <Popconfirm
-            title="Delete Expense"
-            description="Are you sure you want to delete this expense record?"
-            onConfirm={handleDelete}
-            okText="Yes, Delete"
-            cancelText="Cancel"
-            okButtonProps={{ danger: true, loading: isDeleting }}
-          >
-            <Button danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
+          {isOwnerOrAdmin ? (
+            <Popconfirm
+              title="Delete Expense"
+              description="Are you sure you want to delete this expense record?"
+              onConfirm={handleDelete}
+              okText="Yes, Delete"
+              cancelText="Cancel"
+              okButtonProps={{ danger: true, loading: isDeleting }}
+            >
+              <Button danger icon={<DeleteOutlined />}>
+                Delete
+              </Button>
+            </Popconfirm>
+          ) : (
+            <Tooltip title="Only the person who added this expense or group admin can delete it">
+              <Button danger disabled icon={<LockOutlined />}>
+                Delete
+              </Button>
+            </Tooltip>
+          )}
+
           <Space>
             <Button onClick={onClose}>Close</Button>
-            <Button
-              type="primary"
-              icon={<EditOutlined />}
-              onClick={() => {
-                onClose();
-                onEdit(expense);
-              }}
-            >
-              Edit
-            </Button>
+            {isOwnerOrAdmin ? (
+              <Button
+                type="primary"
+                icon={<EditOutlined />}
+                onClick={() => {
+                  onClose();
+                  onEdit(expense);
+                }}
+              >
+                Edit
+              </Button>
+            ) : (
+              <Tooltip title="Only the person who added this expense or group admin can edit it">
+                <Button type="primary" disabled icon={<LockOutlined />}>
+                  Edit
+                </Button>
+              </Tooltip>
+            )}
           </Space>
         </div>
       }
@@ -161,10 +181,10 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
             </Text>
             <Space align="center">
               <Avatar size="small" style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />}>
-                {expense.paidBy?.fullName?.charAt(0).toUpperCase()}
+                {typeof expense.paidBy === 'object' ? expense.paidBy?.fullName?.charAt(0).toUpperCase() : 'U'}
               </Avatar>
               <Text strong style={{ fontSize: 13 }}>
-                {expense.paidBy?.fullName}
+                {typeof expense.paidBy === 'object' ? expense.paidBy?.fullName : 'User'}
               </Text>
             </Space>
           </div>
