@@ -38,7 +38,7 @@ jobs:
       - name: Build Xcode iOS App (Simulator / Unsigned Archive)
         run: |
           cd client/ios/App
-          xcodebuild -workspace App.xcworkspace \
+          xcodebuild -project App.xcodeproj \
                      -scheme App \
                      -sdk iphonesimulator \
                      -configuration Release \
