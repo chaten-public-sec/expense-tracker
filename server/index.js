@@ -52,16 +52,17 @@ const normalizeOrigin = (url) => {
   if (!url) return '';
   return url.trim().replace(/\/+$/, '').toLowerCase();
 };
+const isDev =
+  (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
 
-const isDev = (process.env.NODE_ENV || 'development').toLowerCase() === 'development';
 const rawClientUrl = process.env.CLIENT_URL || '';
 
-// Process configured origins from environment variables (handles single or comma-separated URLs)
 const configuredOrigins = rawClientUrl
   .split(',')
   .map(url => normalizeOrigin(url))
   .filter(Boolean);
 
+// Browser development origins
 const devOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -69,43 +70,61 @@ const devOrigins = [
   'http://localhost:3002',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000',
-  "http://localhost",
-  "https://splitwise.puspender.in",
-  "https://localhost",
 ];
 
-const allowedOrigins = isDev
-  ? Array.from(new Set([...configuredOrigins, ...devOrigins]))
-  : configuredOrigins;
+// Capacitor mobile app origins
+// These must be allowed in PRODUCTION as well
+const capacitorOrigins = [
+  'https://localhost',
+  'http://localhost',
+  'capacitor://localhost',
+];
 
-// Production-grade CORS options configuration
+// Build allowed origins
+const allowedOrigins = Array.from(
+  new Set([
+    ...configuredOrigins,
+    ...capacitorOrigins,
+    ...(isDev ? devOrigins : []),
+  ])
+);
+
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow non-browser / server-to-server / mobile requests without Origin header
+    // Requests without an Origin header
     if (!origin) {
       return callback(null, true);
     }
 
     const normalizedReqOrigin = normalizeOrigin(origin);
 
-    // Permissive matching for all Vercel deployment & preview URLs (*.vercel.app)
-    const isVercelDomain = normalizedReqOrigin.endsWith('.vercel.app') || normalizedReqOrigin.includes('.vercel.app');
-    const isExplicitlyAllowed = allowedOrigins.includes(normalizedReqOrigin);
-    const matchesClientUrl = configuredOrigins.some(u => u === normalizedReqOrigin);
+    const isVercelDomain =
+      normalizedReqOrigin.endsWith('.vercel.app');
 
-    if (isDev || isExplicitlyAllowed || matchesClientUrl || isVercelDomain) {
+    const isExplicitlyAllowed =
+      allowedOrigins.includes(normalizedReqOrigin);
+
+    if (isExplicitlyAllowed || isVercelDomain) {
       return callback(null, true);
     }
 
-    console.warn(`[CORS Warning] Request blocked from unpermitted origin: "${origin}"`);
+    console.warn(
+      `[CORS Warning] Request blocked from unpermitted origin: "${origin}"`
+    );
+
     return callback(null, false);
   },
+
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization'
+  ],
+
   credentials: true,
   optionsSuccessStatus: 200
 };
-
 // 3. Register CORS middleware at the absolute top of the middleware stack
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
