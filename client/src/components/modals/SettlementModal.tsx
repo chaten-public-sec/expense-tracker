@@ -23,10 +23,12 @@ import {
   ClockCircleOutlined,
   SendOutlined,
   DollarOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { Settlement, OwedPerson } from '../../types';
 import api from '../../services/api';
+import { launchUPIPayment } from '../../utils/upiHelper';
 
 const { Title, Text } = Typography;
 
@@ -67,6 +69,25 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
 
   const recipient = targetPerson?.user;
   const amountToPay = targetPerson?.amount || 0;
+
+  const handleLaunchUPI = () => {
+    if (!recipient?.upiId) {
+      showError('Recipient has not configured their UPI ID');
+      return;
+    }
+
+    launchUPIPayment(
+      {
+        upiId: recipient.upiId,
+        name: recipient.fullName,
+        amount: amountToPay,
+        note: `SplitWise Dues Payment to ${recipient.fullName}`,
+      },
+      () => {
+        showSuccess('Launching UPI app... If not opened, scan QR or copy UPI ID below.');
+      }
+    );
+  };
 
   const copyUPI = () => {
     if (recipient?.upiId) {
@@ -157,7 +178,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       centered
     >
       <div style={{ padding: '8px 0' }}>
-        {/* Amount Card */}
+        {/* Amount Header Card */}
         <Card size="small" style={{ background: '#f8fafc', borderRadius: 10, textAlign: 'center', marginBottom: 14 }}>
           <Text type="secondary" style={{ fontSize: 11 }}>
             Total Amount Due
@@ -165,15 +186,34 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
           <Title level={3} style={{ margin: '2px 0 0', color: '#1677ff' }}>
             ₹{amountToPay.toFixed(2)}
           </Title>
+
+          {/* 1-Tap Deep Link UPI Launcher */}
+          {recipient.upiId && (
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={handleLaunchUPI}
+              style={{
+                marginTop: 10,
+                width: '100%',
+                borderRadius: 8,
+                height: 38,
+                background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                fontWeight: 600,
+              }}
+            >
+              Pay ₹{amountToPay.toFixed(2)} via UPI App (GPay / PhonePe / Paytm)
+            </Button>
+          )}
         </Card>
 
-        {/* QR Code & UPI Details FIRST */}
+        {/* QR Code & UPI Details */}
         <Card
           size="small"
           title={
             <Space size={6}>
               <QrcodeOutlined style={{ color: '#1677ff' }} />
-              <Text strong style={{ fontSize: 12 }}>1. Pay via Recipient UPI / QR Code</Text>
+              <Text strong style={{ fontSize: 12 }}>1. Pay via Recipient QR / UPI Details</Text>
             </Space>
           }
           style={{ borderRadius: 10, marginBottom: 14, background: '#fafafa' }}

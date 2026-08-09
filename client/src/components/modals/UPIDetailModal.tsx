@@ -7,9 +7,11 @@ import {
   UserOutlined,
   DollarOutlined,
   CreditCardOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { User } from '../../types';
+import { launchUPIPayment } from '../../utils/upiHelper';
 
 const { Title, Text } = Typography;
 
@@ -28,10 +30,29 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
   amountToPay,
   onPayClick,
 }) => {
-  const { showSuccess } = useToast();
+  const { showSuccess, showError } = useToast();
   const [copied, setCopied] = useState(false);
 
   if (!user) return null;
+
+  const handleLaunchUPI = () => {
+    if (!user.upiId) {
+      showError('Member has not configured a UPI ID');
+      return;
+    }
+
+    launchUPIPayment(
+      {
+        upiId: user.upiId,
+        name: user.fullName,
+        amount: amountToPay || 0,
+        note: `SplitWise Dues Payment to ${user.fullName}`,
+      },
+      () => {
+        showSuccess('Launching UPI app... Or scan QR code below.');
+      }
+    );
+  };
 
   const copyUPI = () => {
     if (user.upiId) {
@@ -91,7 +112,7 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
           </Text>
         </Flex>
 
-        {/* Dues Banner */}
+        {/* Dues Banner & 1-Tap UPI Launcher */}
         {amountToPay !== undefined && amountToPay > 0 && (
           <div
             style={{
@@ -106,9 +127,27 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
             <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
               Amount Dues to Pay
             </Text>
-            <Text strong style={{ fontSize: 22, color: '#1677ff' }}>
+            <Text strong style={{ fontSize: 22, color: '#1677ff', display: 'block' }}>
               ₹{amountToPay.toFixed(2)}
             </Text>
+
+            {user.upiId && (
+              <Button
+                type="primary"
+                icon={<ThunderboltOutlined />}
+                onClick={handleLaunchUPI}
+                style={{
+                  marginTop: 8,
+                  width: '100%',
+                  borderRadius: 8,
+                  height: 36,
+                  fontWeight: 600,
+                  background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+                }}
+              >
+                Pay ₹{amountToPay.toFixed(2)} via UPI App
+              </Button>
+            )}
           </div>
         )}
 
