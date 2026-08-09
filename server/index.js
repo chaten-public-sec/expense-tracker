@@ -140,12 +140,11 @@ app.use('/settlements', settlementRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/notifications', notificationRoutes);
 
-// Health check endpoint for Render / Vercel uptime checks
-app.get('/api/health', (req, res) => {
-  res.json({
+// Health & Ping endpoints for Render / Cron-Job uptime keep-alive
+app.get(['/health', '/api/health'], (req, res) => {
+  res.status(200).json({
     status: 'ok',
     environment: process.env.NODE_ENV || 'development',
-    allowedOrigins: isDev ? 'development (all permitted)' : allowedOrigins,
     message: 'Expense Tracker API Server is running smoothly',
     database: 'MongoDB Atlas Connected',
     socketIO: 'Active',
@@ -153,8 +152,8 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'API is healthy' });
+app.get(['/ping', '/api/ping'], (req, res) => {
+  res.status(200).send('pong');
 });
 
 // Production Error handling middleware
