@@ -372,8 +372,11 @@ export const Profile: React.FC = () => {
         </div>
 
         <div style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-          <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.5 }}>
+          <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.5, display: 'block' }}>
             {pushStatus.description}
+          </Text>
+          <Text type="secondary" style={{ fontSize: 10, marginTop: 4, display: 'block', color: '#1677ff' }}>
+            💡 <strong>iPhone / iOS Tip:</strong> Tap Share icon → <strong>'Add to Home Screen'</strong> to enable native Safari web push notifications!
           </Text>
         </div>
       </Card>

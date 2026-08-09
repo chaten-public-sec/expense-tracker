@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Typography, Button, Space, Avatar, Image, Tag, Flex } from 'antd';
+import { Modal, Typography, Button, Space, Avatar, Image, Tag, Flex, Row, Col } from 'antd';
 import {
   QrcodeOutlined,
   CopyOutlined,
@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { User } from '../../types';
-import { launchUPIPayment } from '../../utils/upiHelper';
+import { launchAppSpecificUPI, UPI_APPS, UPIAppType } from '../../utils/upiHelper';
 
 const { Title, Text } = Typography;
 
@@ -35,13 +35,14 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
 
   if (!user) return null;
 
-  const handleLaunchUPI = () => {
+  const handleLaunchApp = (appId: UPIAppType) => {
     if (!user.upiId) {
       showError('Member has not configured a UPI ID');
       return;
     }
 
-    launchUPIPayment(
+    launchAppSpecificUPI(
+      appId,
       {
         upiId: user.upiId,
         name: user.fullName,
@@ -91,7 +92,7 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
           </Button>
         ),
       ]}
-      width={400}
+      width={460}
       centered
     >
       <Flex vertical align="center" gap={14} style={{ padding: '10px 0' }}>
@@ -112,41 +113,48 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
           </Text>
         </Flex>
 
-        {/* Dues Banner & 1-Tap UPI Launcher */}
+        {/* Dues Banner & App Selector Grid */}
         {amountToPay !== undefined && amountToPay > 0 && (
           <div
             style={{
               width: '100%',
-              padding: '10px 14px',
+              padding: '12px 14px',
               background: '#f0f5ff',
               border: '1px solid #adc6ff',
-              borderRadius: 10,
+              borderRadius: 12,
               textAlign: 'center',
             }}
           >
             <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
               Amount Dues to Pay
             </Text>
-            <Text strong style={{ fontSize: 22, color: '#1677ff', display: 'block' }}>
+            <Text strong style={{ fontSize: 22, color: '#1677ff', display: 'block', marginBottom: 8 }}>
               ₹{amountToPay.toFixed(2)}
             </Text>
 
             {user.upiId && (
-              <Button
-                type="primary"
-                icon={<ThunderboltOutlined />}
-                onClick={handleLaunchUPI}
-                style={{
-                  marginTop: 8,
-                  width: '100%',
-                  borderRadius: 8,
-                  height: 36,
-                  fontWeight: 600,
-                  background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
-                }}
-              >
-                Pay ₹{amountToPay.toFixed(2)} via UPI App
-              </Button>
+              <Row gutter={[6, 6]}>
+                {UPI_APPS.map((app) => (
+                  <Col span={12} sm={8} key={app.id}>
+                    <Button
+                      block
+                      size="small"
+                      onClick={() => handleLaunchApp(app.id)}
+                      style={{
+                        height: 36,
+                        borderRadius: 8,
+                        fontWeight: 600,
+                        fontSize: 11,
+                        background: app.badgeBg,
+                        color: app.color,
+                        borderColor: '#adc6ff',
+                      }}
+                    >
+                      {app.name}
+                    </Button>
+                  </Col>
+                ))}
+              </Row>
             )}
           </div>
         )}
@@ -213,7 +221,7 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
                 style={{ objectFit: 'contain', borderRadius: 8 }}
               />
               <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 6 }}>
-                Tap image to expand & scan via GPay / PhonePe / Paytm
+                Tap image to expand & scan via GPay / PhonePe / Paytm / MobiKwik
               </Text>
             </div>
           ) : (
