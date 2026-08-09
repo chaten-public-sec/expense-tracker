@@ -25,6 +25,9 @@ interface SocketContextType {
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 const getSocketUrl = (): string => {
+  const customSocketUrl = (import.meta.env.VITE_SOCKET_URL || '').trim().replace(/\/+$/, '');
+  if (customSocketUrl) return customSocketUrl;
+
   const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '').replace(/\/api$/, '');
   if (!envUrl) return window.location.origin;
   return envUrl;
@@ -126,8 +129,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 3000,
     });
 
     socketRef.current = socket;
@@ -148,7 +151,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
 
     socket.on('connect_error', (err) => {
-      console.error('[Socket.IO Client] Connection error:', err.message);
+      console.warn('[Socket.IO Client] Connection failed (serverless fallback active):', err.message);
       setIsConnected(false);
     });
 
