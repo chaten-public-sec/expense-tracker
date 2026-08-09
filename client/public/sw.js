@@ -8,8 +8,8 @@ self.addEventListener('push', (event) => {
 
     const options = {
       body: payload.body || '',
-      icon: payload.icon || '/favicon.ico',
-      badge: '/favicon.ico',
+      icon: payload.icon || '/favicon.svg',
+      badge: '/favicon.svg',
       vibrate: [100, 50, 100],
       data: payload.data || {},
       actions: [],

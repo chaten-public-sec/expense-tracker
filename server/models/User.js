@@ -23,6 +23,19 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Password is required'],
     minlength: [8, 'Password must be at least 8 characters long']
   },
+  upiId: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  qrCodeUrl: {
+    type: String,
+    default: null
+  },
+  qrCodePublicId: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const GroupMember = require('../models/GroupMember');
 const Group = require('../models/Group');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', {
@@ -50,6 +51,8 @@ const signup = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      upiId: user.upiId || '',
+      qrCodeUrl: user.qrCodeUrl || null,
       group: null,
       role: null,
       token
@@ -91,6 +94,8 @@ const login = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      upiId: user.upiId || '',
+      qrCodeUrl: user.qrCodeUrl || null,
       group,
       role,
       token
@@ -131,19 +136,28 @@ const getMe = async (req, res) => {
   }
 };
 
-// @desc Update user profile
+// @desc Update user profile (including UPI ID and QR code details)
 // @route PUT /api/auth/profile
 const updateProfile = async (req, res) => {
   try {
-    const { fullName, phone } = req.body;
+    const { fullName, phone, upiId, qrCodeUrl, qrCodePublicId } = req.body;
     const user = await User.findById(req.user._id);
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (fullName) user.fullName = fullName;
-    if (phone) user.phone = phone;
+    if (fullName) user.fullName = fullName.trim();
+    if (phone) user.phone = phone.trim();
+    if (upiId !== undefined) user.upiId = upiId.trim();
+
+    // Clean up old QR code from Cloudinary if replacing
+    if (qrCodePublicId !== undefined && user.qrCodePublicId && user.qrCodePublicId !== qrCodePublicId) {
+      await deleteFromCloudinary(user.qrCodePublicId);
+    }
+
+    if (qrCodeUrl !== undefined) user.qrCodeUrl = qrCodeUrl;
+    if (qrCodePublicId !== undefined) user.qrCodePublicId = qrCodePublicId;
 
     await user.save();
 
@@ -151,7 +165,10 @@ const updateProfile = async (req, res) => {
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      phone: user.phone
+      phone: user.phone,
+      upiId: user.upiId,
+      qrCodeUrl: user.qrCodeUrl,
+      qrCodePublicId: user.qrCodePublicId
     });
   } catch (error) {
     console.error('Update Profile Error:', error);
@@ -159,4 +176,20 @@ const updateProfile = async (req, res) => {
   }
 };
 
-module.exports = { signup, login, getMe, updateProfile };
+// @desc Upload QR Code image to Cloudinary
+// @route POST /api/auth/upload-qr
+const uploadQRCode = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No QR code image file uploaded' });
+    }
+
+    const uploadResult = await uploadToCloudinary(req.file.buffer, 'expense_tracker/qr_codes');
+    return res.json({ imageUrl: uploadResult.secure_url, publicId: uploadResult.public_id });
+  } catch (error) {
+    console.error('Upload QR Error:', error);
+    return res.status(500).json({ message: 'Failed to upload QR code image' });
+  }
+};
+
+module.exports = { signup, login, getMe, updateProfile, uploadQRCode };

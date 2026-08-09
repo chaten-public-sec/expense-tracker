@@ -3,6 +3,9 @@ export interface User {
   fullName: string;
   email: string;
   phone: string;
+  upiId?: string;
+  qrCodeUrl?: string | null;
+  qrCodePublicId?: string | null;
   createdAt?: string;
 }
 
@@ -11,6 +14,7 @@ export interface Group {
   name: string;
   inviteCode: string;
   createdBy: string;
+  payday?: number | null;
   createdAt: string;
   userRole?: 'creator' | 'member';
 }
@@ -20,11 +24,22 @@ export interface GroupMember {
   fullName: string;
   email: string;
   phone: string;
+  upiId?: string;
+  qrCodeUrl?: string | null;
   role: 'creator' | 'member';
   joinedAt: string;
   totalPaid: number;
   totalOwes: number;
   totalReceives: number;
+}
+
+export interface BillingCycle {
+  payday: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  nextPayday: string | null;
+  daysRemaining: number | null;
+  isPaydayToday: boolean;
 }
 
 export interface SplitDetail {
@@ -43,6 +58,7 @@ export interface Expense {
   splitDetails: SplitDetail[];
   paymentMode: 'cash' | 'upi';
   screenshotUrl?: string | null;
+  screenshotPublicId?: string | null;
   notes?: string;
   date: string;
   createdAt?: string;
@@ -75,6 +91,8 @@ export interface OwedPerson {
     fullName: string;
     email: string;
     phone: string;
+    upiId?: string;
+    qrCodeUrl?: string | null;
   };
   amount: number;
 }
@@ -83,6 +101,7 @@ export interface DashboardData {
   hasGroup: boolean;
   user: User;
   group?: Group;
+  billingCycle?: BillingCycle;
   balances?: {
     youNeedToPayTotal: number;
     youNeedToPayList: OwedPerson[];

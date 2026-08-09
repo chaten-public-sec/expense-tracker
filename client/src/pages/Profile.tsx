@@ -13,6 +13,9 @@ import {
   Alert,
   Flex,
   Switch,
+  Upload,
+  Image,
+  Select,
 } from 'antd';
 import {
   UserOutlined,
@@ -27,6 +30,11 @@ import {
   StopOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  CreditCardOutlined,
+  QrcodeOutlined,
+  UploadOutlined,
+  CalendarOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
@@ -56,6 +64,14 @@ export const Profile: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [editError, setEditError] = useState('');
 
+  // UPI QR Code Upload state
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(user?.qrCodeUrl || null);
+  const [qrCodePublicId, setQrCodePublicId] = useState<string | null>(user?.qrCodePublicId || null);
+  const [isUploadingQR, setIsUploadingQR] = useState(false);
+
+  // Admin Payday Settings state
+  const [paydayValue, setPaydayValue] = useState<number | null>(group?.payday || null);
+  const [isSavingPayday, setIsSavingPayday] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   const copyCode = () => {
@@ -71,9 +87,33 @@ export const Profile: React.FC = () => {
     editForm.setFieldsValue({
       fullName: user?.fullName || '',
       phone: user?.phone || '',
+      upiId: user?.upiId || '',
     });
+    setQrCodeUrl(user?.qrCodeUrl || null);
+    setQrCodePublicId(user?.qrCodePublicId || null);
     setEditError('');
     setIsEditOpen(true);
+  };
+
+  const handleQRUpload = async (options: any) => {
+    const { file } = options;
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      setIsUploadingQR(true);
+      const res = await api.post('/auth/upload-qr', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setQrCodeUrl(res.data.imageUrl);
+      setQrCodePublicId(res.data.publicId);
+      showSuccess('QR Code uploaded to Cloudinary!');
+    } catch (err: any) {
+      console.error('Upload QR Error:', err);
+      showError(err.response?.data?.message || 'Failed to upload QR Code image');
+    } finally {
+      setIsUploadingQR(false);
+    }
   };
 
   const handleUpdateProfile = async (values: any) => {
@@ -84,6 +124,9 @@ export const Profile: React.FC = () => {
       await api.put('/auth/profile', {
         fullName: values.fullName.trim(),
         phone: values.phone.trim(),
+        upiId: values.upiId ? values.upiId.trim() : '',
+        qrCodeUrl,
+        qrCodePublicId,
       });
       showSuccess('Profile updated successfully!');
       await refreshUserData();
@@ -95,6 +138,21 @@ export const Profile: React.FC = () => {
       showError(msg);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSavePayday = async (value: number | null) => {
+    try {
+      setIsSavingPayday(true);
+      await api.put('/api/groups/payday', { payday: value });
+      setPaydayValue(value);
+      showSuccess(value ? `Group Payday updated to ${value}th of every month!` : 'Payday cycle disabled');
+      await refreshUserData();
+    } catch (err: any) {
+      console.error('Save Payday Error:', err);
+      showError(err.response?.data?.message || 'Failed to update payday settings');
+    } finally {
+      setIsSavingPayday(false);
     }
   };
 
@@ -174,7 +232,6 @@ export const Profile: React.FC = () => {
     });
   };
 
-  // Determine push status display
   const getPushStatusInfo = () => {
     if (!pushSupported) {
       return {
@@ -214,7 +271,7 @@ export const Profile: React.FC = () => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* Profile Header Card */}
       <Card style={{ borderRadius: 16 }} styles={{ body: { padding: 18 } }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <Space align="center" size={12}>
             <Avatar
               size={54}
@@ -237,6 +294,11 @@ export const Profile: React.FC = () => {
               <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
                 {user?.phone || 'No phone set'}
               </Text>
+              {user?.upiId && (
+                <Tag color="blue" icon={<CreditCardOutlined />} style={{ marginTop: 4 }}>
+                  UPI: {user.upiId}
+                </Tag>
+              )}
             </div>
           </Space>
 
@@ -244,13 +306,31 @@ export const Profile: React.FC = () => {
             Edit
           </Button>
         </div>
+
+        {/* Saved QR Code preview */}
+        {user?.qrCodeUrl && (
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Image
+              src={user.qrCodeUrl}
+              alt="My QR Code"
+              width={48}
+              height={48}
+              style={{ borderRadius: 6, objectFit: 'contain', border: '1px solid #e2e8f0' }}
+            />
+            <div>
+              <Text strong style={{ fontSize: 12, display: 'block' }}>
+                Payment QR Code Active
+              </Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                Flatmates can scan this to send you money
+              </Text>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Push Notifications Card */}
-      <Card
-        style={{ borderRadius: 14 }}
-        styles={{ body: { padding: 16 } }}
-      >
+      <Card style={{ borderRadius: 14 }} styles={{ body: { padding: 16 } }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <Space size={8} align="center">
             <div
@@ -291,21 +371,14 @@ export const Profile: React.FC = () => {
           />
         </div>
 
-        <div
-          style={{
-            padding: '10px 12px',
-            background: '#f8fafc',
-            borderRadius: 8,
-            border: '1px solid #f0f0f0',
-          }}
-        >
+        <div style={{ padding: '10px 12px', background: '#f8fafc', borderRadius: 8, border: '1px solid #f0f0f0' }}>
           <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.5 }}>
             {pushStatus.description}
           </Text>
         </div>
       </Card>
 
-      {/* Active Group Card */}
+      {/* Active Group & Admin Payday Card */}
       {group ? (
         <Card
           title={
@@ -334,6 +407,33 @@ export const Profile: React.FC = () => {
                 </Button>
               </Space>
             </div>
+
+            {/* Admin Payday Settings */}
+            {userRole === 'creator' && (
+              <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
+                <Space align="center" style={{ marginBottom: 6 }}>
+                  <SettingOutlined style={{ color: '#1677ff' }} />
+                  <Text strong style={{ fontSize: 13 }}>Admin Group Settings: Monthly Payday</Text>
+                </Space>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 8 }}>
+                  Set monthly payday date (e.g., 8th). Dues cycle will automatically calculate (8 Aug – 8 Sept).
+                </Text>
+                <Select
+                  style={{ width: '100%' }}
+                  placeholder="Select monthly payday day"
+                  value={paydayValue}
+                  loading={isSavingPayday}
+                  onChange={handleSavePayday}
+                  allowClear
+                  options={[
+                    ...Array.from({ length: 31 }, (_, i) => ({
+                      value: i + 1,
+                      label: `${i + 1}${i + 1 === 1 ? 'st' : i + 1 === 2 ? 'nd' : i + 1 === 3 ? 'rd' : 'th'} of every month`,
+                    })),
+                  ]}
+                />
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 8, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
               <Button danger block onClick={handleLeaveGroup} loading={actionLoading} style={{ fontSize: 13 }}>
@@ -374,10 +474,10 @@ export const Profile: React.FC = () => {
       <Modal
         open={isEditOpen}
         onCancel={() => setIsEditOpen(false)}
-        title="Edit Profile"
+        title="Edit Profile & Payment Details"
         footer={null}
         centered
-        width={360}
+        width={400}
       >
         {editError && (
           <Alert
@@ -412,12 +512,43 @@ export const Profile: React.FC = () => {
             <Input prefix={<PhoneOutlined />} size="large" />
           </Form.Item>
 
+          <Form.Item
+            label={<Text strong style={{ fontSize: 13 }}>UPI ID / VPA (Optional)</Text>}
+            name="upiId"
+            tooltip="Your flatmates will see this when settling dues"
+          >
+            <Input prefix={<CreditCardOutlined />} placeholder="e.g. john@okicici or 9876543210@paytm" size="large" />
+          </Form.Item>
+
+          {/* QR Code Upload */}
+          <Form.Item label={<Text strong style={{ fontSize: 13 }}>UPI Payment QR Code Image</Text>}>
+            {qrCodeUrl ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 8, border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                <Image src={qrCodeUrl} width={60} height={60} style={{ objectFit: 'contain', borderRadius: 6 }} />
+                <div>
+                  <Text strong style={{ fontSize: 12, display: 'block' }}>QR Code Uploaded</Text>
+                  <Upload customRequest={handleQRUpload} showUploadList={false}>
+                    <Button size="small" icon={<UploadOutlined />} loading={isUploadingQR}>
+                      Replace Image
+                    </Button>
+                  </Upload>
+                </div>
+              </div>
+            ) : (
+              <Upload customRequest={handleQRUpload} showUploadList={false}>
+                <Button block icon={<QrcodeOutlined />} loading={isUploadingQR} style={{ height: 42 }}>
+                  Upload QR Code Screenshot
+                </Button>
+              </Upload>
+            )}
+          </Form.Item>
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <Button onClick={() => setIsEditOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
             <Button type="primary" htmlType="submit" loading={isSaving}>
-              Save
+              Save Profile
             </Button>
           </div>
         </Form>

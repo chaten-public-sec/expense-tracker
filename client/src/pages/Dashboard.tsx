@@ -4,7 +4,6 @@ import {
   Row,
   Col,
   Card,
-  Statistic,
   Button,
   Tag,
   Avatar,
@@ -14,24 +13,28 @@ import {
   Spin,
   Empty,
   Flex,
+  Tooltip,
 } from 'antd';
 import {
   PlusOutlined,
   ArrowUpOutlined,
   ArrowDownOutlined,
   ClockCircleOutlined,
-  FileTextOutlined,
   RightOutlined,
   DollarOutlined,
-  HistoryOutlined,
   UserOutlined,
-  DollarCircleOutlined,
-  MobileOutlined,
   ReloadOutlined,
+  QrcodeOutlined,
+  CalendarOutlined,
+  BellOutlined,
+  SendOutlined,
+  HistoryOutlined,
+  MobileOutlined,
+  DollarCircleOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
-import { DashboardData, Expense, GroupMember, OwedPerson, Settlement } from '../types';
+import { DashboardData, Expense, GroupMember, OwedPerson, Settlement, User } from '../types';
 import api from '../services/api';
 
 // Modals
@@ -40,11 +43,12 @@ import { ExpenseDetailModal } from '../components/modals/ExpenseDetailModal';
 import { EditExpenseModal } from '../components/modals/EditExpenseModal';
 import { BreakdownModal } from '../components/modals/BreakdownModal';
 import { SettlementModal } from '../components/modals/SettlementModal';
+import { UPIDetailModal } from '../components/modals/UPIDetailModal';
 
 const { Title, Text } = Typography;
 
 export const Dashboard: React.FC = () => {
-  const { user, group } = useAuth();
+  const { user, group, userRole } = useAuth();
   const { showError, showSuccess } = useToast();
   const navigate = useNavigate();
 
@@ -64,6 +68,13 @@ export const Dashboard: React.FC = () => {
   // Settlement modal
   const [settlementTarget, setSettlementTarget] = useState<OwedPerson | null>(null);
   const [receiverPendingSettlement, setReceiverPendingSettlement] = useState<Settlement | null>(null);
+
+  // UPI Detail Modal
+  const [upiModalUser, setUpiModalUser] = useState<User | null>(null);
+  const [upiModalAmount, setUpiModalAmount] = useState<number | undefined>(undefined);
+
+  // Reminding state
+  const [remindLoadingMap, setRemindLoadingMap] = useState<Record<string, boolean>>({});
 
   const loadDashboardData = async () => {
     try {
@@ -94,6 +105,18 @@ export const Dashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
+  const handleSendReminder = async (targetUserId: string, targetName: string) => {
+    try {
+      setRemindLoadingMap((prev) => ({ ...prev, [targetUserId]: true }));
+      await api.post('/groups/remind-member', { targetUserId });
+      showSuccess(`Payment reminder sent to ${targetName}!`);
+    } catch (err: any) {
+      showError(err.response?.data?.message || 'Failed to send reminder');
+    } finally {
+      setRemindLoadingMap((prev) => ({ ...prev, [targetUserId]: false }));
+    }
+  };
+
   const formatTimeAgo = (dateStr: string) => {
     const now = new Date();
     const past = new Date(dateStr);
@@ -109,10 +132,17 @@ export const Dashboard: React.FC = () => {
     return `${diffDays}d ago`;
   };
 
+  const formatDateShort = (dateStr: string | null) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
   const youNeedToPayTotal = data?.balances?.youNeedToPayTotal || 0;
   const youWillReceiveTotal = data?.balances?.youWillReceiveTotal || 0;
   const youNeedToPayList = data?.balances?.youNeedToPayList || [];
   const youWillReceiveList = data?.balances?.youWillReceiveList || [];
+  const billingCycle = data?.billingCycle;
 
   const netBalance = useMemo(() => {
     return youWillReceiveTotal - youNeedToPayTotal;
@@ -122,9 +152,11 @@ export const Dashboard: React.FC = () => {
 
   if (isLoading && !data) {
     return (
-      <div style={{ padding: '60px 16px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: 40, textAlign: 'center' }}>
         <Spin size="large" />
-        <Text type="secondary" style={{ fontSize: 13 }}>Loading dashboard...</Text>
+        <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+          Loading your financial overview...
+        </Text>
       </div>
     );
   }
@@ -133,7 +165,7 @@ export const Dashboard: React.FC = () => {
     return (
       <div style={{ padding: 16 }}>
         <Alert
-          title="Failed to Load"
+          title="Error Loading Dashboard"
           description={loadError}
           type="error"
           showIcon
@@ -150,7 +182,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Pending Verifications Alerts (If Any) */}
+      {/* Pending Verifications Alerts */}
       {receiverVerifications.length > 0 && (
         <Alert
           title={
@@ -171,6 +203,29 @@ export const Dashboard: React.FC = () => {
           showIcon
           icon={<ClockCircleOutlined />}
           style={{ borderRadius: 12 }}
+        />
+      )}
+
+      {/* Payday Billing Cycle Banner */}
+      {billingCycle?.payday && (
+        <Alert
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <Space size={6} align="center">
+                <CalendarOutlined style={{ color: '#1677ff', fontSize: 14 }} />
+                <span style={{ fontSize: 12 }}>
+                  <strong>Billing Cycle:</strong> {formatDateShort(billingCycle.startDate)} – {formatDateShort(billingCycle.endDate)}
+                </span>
+              </Space>
+              <Tag color={billingCycle.isPaydayToday ? 'gold' : 'blue'} style={{ margin: 0, fontWeight: 600 }}>
+                {billingCycle.isPaydayToday
+                  ? '⚡ Today is Group Payday!'
+                  : `Next Payday in ${billingCycle.daysRemaining} days`}
+              </Tag>
+            </div>
+          }
+          type={billingCycle.isPaydayToday ? 'warning' : 'info'}
+          style={{ borderRadius: 12, background: billingCycle.isPaydayToday ? '#fffbe6' : '#f0f5ff' }}
         />
       )}
 
@@ -264,109 +319,207 @@ export const Dashboard: React.FC = () => {
               ₹{youWillReceiveTotal.toFixed(2)}
             </Text>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: 10 }}>View list</Text>
+              <Text type="secondary" style={{ fontSize: 10 }}>View receivables</Text>
               <RightOutlined style={{ fontSize: 9, color: '#9ca3af' }} />
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Recent Expenses Feed */}
-      <Card
-        title={
-          <Space size={6}>
-            <FileTextOutlined style={{ color: '#1677ff', fontSize: 15 }} />
-            <span style={{ fontSize: 14 }}>Recent Expenses</span>
-          </Space>
-        }
-        extra={
-          <Button type="link" size="small" onClick={() => navigate('/expenses')} style={{ padding: 0, fontSize: 12 }}>
-            See All
-          </Button>
-        }
-        style={{ borderRadius: 14 }}
-        styles={{ body: { padding: 0 } }}
-      >
-        {data?.recentExpenses && data.recentExpenses.length > 0 ? (
-          <Flex vertical>
-            {data.recentExpenses.slice(0, 5).map((item, index) => (
+      {/* Dues Action Items List (If Any Dues) */}
+      {youNeedToPayList.length > 0 && (
+        <Card
+          title={
+            <Space size={6}>
+              <ArrowDownOutlined style={{ color: '#ef4444' }} />
+              <span style={{ fontSize: 14 }}>People You Owe</span>
+            </Space>
+          }
+          style={{ borderRadius: 14 }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <Flex vertical gap={8}>
+            {youNeedToPayList.map((person) => (
               <div
-                key={item._id || index}
+                key={person.user._id}
                 style={{
-                  padding: '12px 14px',
-                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  borderBottom: index !== Math.min(4, data.recentExpenses!.length - 1) ? '1px solid #f8fafc' : 'none',
-                  background: index % 2 === 0 ? '#ffffff' : '#fafafa',
+                  padding: '8px 10px',
+                  background: '#fafafa',
+                  borderRadius: 10,
+                  border: '1px solid #f0f0f0',
                 }}
-                onClick={() => setSelectedExpense(item)}
               >
-                <div style={{ minWidth: 0, paddingRight: 8 }}>
-                  <Text strong style={{ fontSize: 13, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.title}
-                  </Text>
-                  <Space size={4} style={{ fontSize: 11 }}>
-                    <Text type="secondary">{item.paidBy?.fullName?.split(' ')[0]}</Text>
-                    <Text type="secondary">•</Text>
-                    <Text type="secondary">{formatTimeAgo(item.date || item.createdAt || '')}</Text>
-                    <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}>
-                      {item.paymentMode === 'upi' ? 'UPI' : 'Cash'}
-                    </Tag>
-                  </Space>
-                </div>
+                <Space size={8} align="center">
+                  <Avatar size={34} style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
+                    {person.user.fullName?.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <div>
+                    <Text strong style={{ fontSize: 13, display: 'block', lineHeight: 1.2 }}>
+                      {person.user.fullName}
+                    </Text>
+                    <Text type="danger" style={{ fontSize: 12, fontWeight: 600 }}>
+                      ₹{person.amount.toFixed(2)}
+                    </Text>
+                  </div>
+                </Space>
 
-                <Text strong style={{ fontSize: 15, color: '#1677ff', flexShrink: 0 }}>
-                  ₹{item.amount.toFixed(2)}
-                </Text>
+                <Space size={6}>
+                  <Button
+                    size="small"
+                    icon={<QrcodeOutlined />}
+                    onClick={() => {
+                      setUpiModalUser({
+                        _id: person.user._id,
+                        fullName: person.user.fullName,
+                        email: person.user.email,
+                        phone: person.user.phone,
+                        upiId: person.user.upiId || '',
+                        qrCodeUrl: person.user.qrCodeUrl || null,
+                      });
+                      setUpiModalAmount(person.amount);
+                    }}
+                  >
+                    UPI / QR
+                  </Button>
+
+                  <Button
+                    size="small"
+                    type="primary"
+                    onClick={() => setSettlementTarget(person)}
+                  >
+                    Settle
+                  </Button>
+                </Space>
               </div>
             ))}
           </Flex>
-        ) : (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No expenses recorded yet."
-            style={{ padding: '24px 0' }}
-          />
-        )}
-      </Card>
+        </Card>
+      )}
 
-      {/* Recent Activity Feed */}
+      {/* Admin Remind Section (People Who Owe You / Group) */}
+      {userRole === 'creator' && youWillReceiveList.length > 0 && (
+        <Card
+          title={
+            <Space size={6}>
+              <ArrowUpOutlined style={{ color: '#10b981' }} />
+              <span style={{ fontSize: 14 }}>Flatmates Who Owe Dues (Admin Reminders)</span>
+            </Space>
+          }
+          style={{ borderRadius: 14 }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <Flex vertical gap={8}>
+            {youWillReceiveList.map((person) => (
+              <div
+                key={person.user._id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 10px',
+                  background: '#fafafa',
+                  borderRadius: 10,
+                  border: '1px solid #f0f0f0',
+                }}
+              >
+                <Space size={8} align="center">
+                  <Avatar size={34} style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />}>
+                    {person.user.fullName?.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <div>
+                    <Text strong style={{ fontSize: 13, display: 'block', lineHeight: 1.2 }}>
+                      {person.user.fullName}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>
+                      Owes ₹{person.amount.toFixed(2)}
+                    </Text>
+                  </div>
+                </Space>
+
+                <Button
+                  size="small"
+                  icon={<SendOutlined />}
+                  loading={remindLoadingMap[person.user._id]}
+                  onClick={() => handleSendReminder(person.user._id, person.user.fullName)}
+                >
+                  Send Pay Now
+                </Button>
+              </div>
+            ))}
+          </Flex>
+        </Card>
+      )}
+
+      {/* Recent Expenses List */}
       <Card
         title={
-          <Space size={6}>
-            <HistoryOutlined style={{ color: '#1677ff', fontSize: 15 }} />
-            <span style={{ fontSize: 14 }}>Recent Activity</span>
-          </Space>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Space size={6}>
+              <HistoryOutlined style={{ color: '#1677ff' }} />
+              <span style={{ fontSize: 14 }}>Recent Expenses</span>
+            </Space>
+            <Button type="link" size="small" onClick={() => navigate('/expenses')} style={{ fontSize: 12, padding: 0 }}>
+              View All
+            </Button>
+          </div>
         }
         style={{ borderRadius: 14 }}
-        styles={{ body: { padding: '12px 14px' } }}
+        styles={{ body: { padding: 12 } }}
       >
-        {data?.recentActivity && data.recentActivity.length > 0 ? (
-          <Flex vertical gap={10}>
-            {data.recentActivity.slice(0, 4).map((act, idx) => (
-              <div key={act._id || idx} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Avatar size="small" style={{ backgroundColor: '#0f172a', fontSize: 10 }} icon={<UserOutlined />}>
-                  {act.user?.fullName?.charAt(0).toUpperCase()}
-                </Avatar>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={{ fontSize: 12, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <strong>{act.user?.fullName?.split(' ')[0]}</strong> {act.action}
+        {data?.recentExpenses && data.recentExpenses.length > 0 ? (
+          <Flex vertical gap={8}>
+            {data.recentExpenses.slice(0, 5).map((item) => (
+              <div
+                key={item._id}
+                onClick={() => setSelectedExpense(item)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 12px',
+                  background: '#fafafa',
+                  borderRadius: 10,
+                  border: '1px solid #f0f0f0',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                <Space size={10} align="center">
+                  <Avatar
+                    style={{
+                      backgroundColor: item.paymentMode === 'upi' ? '#e6f4ff' : '#f6ffed',
+                      color: item.paymentMode === 'upi' ? '#1677ff' : '#52c41a',
+                      flexShrink: 0,
+                    }}
+                    size={36}
+                    icon={item.paymentMode === 'upi' ? <MobileOutlined /> : <DollarCircleOutlined />}
+                  />
+                  <div>
+                    <Text strong style={{ fontSize: 13, display: 'block', lineHeight: 1.2 }}>
+                      {item.title}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Paid by {item.paidBy?.fullName} • {formatTimeAgo(item.date || item.createdAt || '')}
+                    </Text>
+                  </div>
+                </Space>
+
+                <div style={{ textAlign: 'right' }}>
+                  <Text strong style={{ fontSize: 14, color: '#1f2937', display: 'block' }}>
+                    ₹{item.amount.toFixed(2)}
                   </Text>
-                  <Text type="secondary" style={{ fontSize: 10 }}>
-                    {formatTimeAgo(act.createdAt)}
-                  </Text>
+                  <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+                    {item.splitType === 'everyone' ? 'Everyone' : 'Specific'}
+                  </Tag>
                 </div>
               </div>
             ))}
           </Flex>
         ) : (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No recent activity"
-            style={{ padding: '16px 0' }}
-          />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No expenses recorded yet" style={{ margin: '16px 0' }} />
         )}
       </Card>
 
@@ -374,15 +527,18 @@ export const Dashboard: React.FC = () => {
       <AddExpenseModal
         isOpen={isAddExpenseOpen}
         onClose={() => setIsAddExpenseOpen(false)}
-        members={members}
         onExpenseAdded={loadDashboardData}
+        members={members}
       />
 
       <ExpenseDetailModal
         isOpen={!!selectedExpense}
         onClose={() => setSelectedExpense(null)}
         expense={selectedExpense}
-        onEdit={(exp) => setEditingExpense(exp)}
+        onEdit={(exp) => {
+          setSelectedExpense(null);
+          setEditingExpense(exp);
+        }}
         onExpenseDeleted={loadDashboardData}
       />
 
@@ -390,18 +546,21 @@ export const Dashboard: React.FC = () => {
         isOpen={!!editingExpense}
         onClose={() => setEditingExpense(null)}
         expense={editingExpense}
-        members={members}
         onExpenseUpdated={loadDashboardData}
+        members={members}
       />
 
       <BreakdownModal
         isOpen={!!breakdownType}
         onClose={() => setBreakdownType(null)}
-        title={breakdownType === 'need_to_pay' ? 'You Need to Pay' : 'You Will Receive'}
+        title={breakdownType === 'need_to_pay' ? 'People You Owe' : 'People Who Owe You'}
         type={breakdownType || 'need_to_pay'}
         totalAmount={breakdownType === 'need_to_pay' ? youNeedToPayTotal : youWillReceiveTotal}
         peopleList={breakdownType === 'need_to_pay' ? youNeedToPayList : youWillReceiveList}
-        onMarkAsPaid={(person) => setSettlementTarget(person)}
+        onMarkAsPaid={(person: OwedPerson) => {
+          setBreakdownType(null);
+          setSettlementTarget(person);
+        }}
       />
 
       <SettlementModal
@@ -413,6 +572,23 @@ export const Dashboard: React.FC = () => {
         targetPerson={settlementTarget}
         pendingSettlement={receiverPendingSettlement}
         onSettlementUpdated={loadDashboardData}
+      />
+
+      <UPIDetailModal
+        isOpen={!!upiModalUser}
+        onClose={() => {
+          setUpiModalUser(null);
+          setUpiModalAmount(undefined);
+        }}
+        user={upiModalUser}
+        amountToPay={upiModalAmount}
+        onPayClick={(u, amt) => {
+          setUpiModalUser(null);
+          setSettlementTarget({
+            user: { _id: u._id, fullName: u.fullName, email: u.email, phone: u.phone },
+            amount: amt || 0,
+          });
+        }}
       />
     </div>
   );

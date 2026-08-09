@@ -18,6 +18,16 @@ const groupSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  payday: {
+    type: Number,
+    min: 1,
+    max: 31,
+    default: null
+  },
+  lastPaydayNotificationSent: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

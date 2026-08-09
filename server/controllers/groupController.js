@@ -3,9 +3,11 @@ const GroupMember = require('../models/GroupMember');
 const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 const Activity = require('../models/Activity');
+const User = require('../models/User');
 const { calculateGroupBalances } = require('../utils/balance');
-const { emitToGroup } = require('../socket/socketManager');
-const { sendPushToGroup } = require('../services/pushService');
+const { calculateBillingCycle } = require('../utils/billingCycle');
+const { emitToUser, emitToGroup } = require('../socket/socketManager');
+const { sendPushToUser, sendPushToGroup } = require('../services/pushService');
 
 // Generate random 6-character uppercase alphanumeric code
 const generateInviteCode = () => {
@@ -138,7 +140,7 @@ const joinGroup = async (req, res) => {
   }
 };
 
-// @desc Get active group info and members
+// @desc Get active group info, members, and billing cycle
 // @route GET /api/groups/info
 const getGroupInfo = async (req, res) => {
   try {
@@ -150,7 +152,7 @@ const getGroupInfo = async (req, res) => {
     const group = membership.groupId;
     const { totalPaidMap, totalOwesMap, totalReceivesMap } = await calculateGroupBalances(group._id);
 
-    const members = await GroupMember.find({ groupId: group._id }).populate('userId', 'fullName email phone');
+    const members = await GroupMember.find({ groupId: group._id }).populate('userId', 'fullName email phone upiId qrCodeUrl');
 
     const memberList = members.map(m => {
       const uId = m.userId._id.toString();
@@ -159,6 +161,8 @@ const getGroupInfo = async (req, res) => {
         fullName: m.userId.fullName,
         email: m.userId.email,
         phone: m.userId.phone,
+        upiId: m.userId.upiId || '',
+        qrCodeUrl: m.userId.qrCodeUrl || null,
         role: m.role,
         joinedAt: m.joinedAt,
         totalPaid: Math.round((totalPaidMap[uId] || 0) * 100) / 100,
@@ -167,14 +171,136 @@ const getGroupInfo = async (req, res) => {
       };
     });
 
+    const billingCycle = calculateBillingCycle(group.payday);
+
     return res.json({
       group,
       userRole: membership.role,
-      members: memberList
+      members: memberList,
+      billingCycle
     });
   } catch (error) {
     console.error('Get Group Info Error:', error);
     return res.status(500).json({ message: 'Server error fetching group info' });
+  }
+};
+
+// @desc Set / update Group Payday (Admin only)
+// @route PUT /api/groups/payday
+const setPayday = async (req, res) => {
+  try {
+    const { payday } = req.body;
+
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    if (membership.role !== 'creator') {
+      return res.status(403).json({ message: 'Forbidden: Only the group admin can set the group payday.' });
+    }
+
+    const group = await Group.findById(membership.groupId);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    let numericPayday = null;
+    if (payday !== null && payday !== undefined && payday !== '') {
+      numericPayday = parseInt(payday, 10);
+      if (isNaN(numericPayday) || numericPayday < 1 || numericPayday > 31) {
+        return res.status(400).json({ message: 'Payday must be a day of the month between 1 and 31' });
+      }
+    }
+
+    group.payday = numericPayday;
+    await group.save();
+
+    const billingCycle = calculateBillingCycle(group.payday);
+
+    await Activity.create({
+      groupId: group._id,
+      user: req.user._id,
+      action: numericPayday ? `set group payday to day ${numericPayday} of every month` : 'disabled payday billing cycle'
+    });
+
+    // Notify group members
+    if (numericPayday) {
+      emitToGroup(group._id, 'notification', {
+        type: 'group:payday_updated',
+        message: `${req.user.fullName} set monthly payday to day ${numericPayday} of every month`,
+        actorName: req.user.fullName,
+        timestamp: new Date().toISOString(),
+      }, req.user._id.toString());
+    }
+
+    return res.json({
+      message: numericPayday ? `Payday updated to day ${numericPayday} of every month` : 'Payday cleared',
+      group,
+      billingCycle
+    });
+  } catch (error) {
+    console.error('Set Payday Error:', error);
+    return res.status(500).json({ message: 'Server error setting group payday' });
+  }
+};
+
+// @desc Send manual "Pay Now" reminder to a group member (Admin only)
+// @route POST /api/groups/remind-member
+const sendPaymentReminder = async (req, res) => {
+  try {
+    const { targetUserId } = req.body;
+    if (!targetUserId) {
+      return res.status(400).json({ message: 'Target user ID is required' });
+    }
+
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(400).json({ message: 'You are not part of any group.' });
+    }
+
+    if (membership.role !== 'creator') {
+      return res.status(403).json({ message: 'Forbidden: Only the group admin can send payment reminders.' });
+    }
+
+    const targetUser = await User.findById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({ message: 'Target member not found' });
+    }
+
+    // Check balances to get owed details
+    const balances = await calculateGroupBalances(membership.groupId, targetUserId);
+    const owedTotal = balances.currentUserSummary.youNeedToPayTotal;
+
+    const adminUser = await User.findById(req.user._id);
+
+    const message = owedTotal > 0
+      ? `Payday Reminder from Admin ${adminUser.fullName}: You have pending dues of ₹${owedTotal.toFixed(2)}. Please pay your flatmates!`
+      : `Payment Reminder from Admin ${adminUser.fullName}: Please check your flatmate balance and settle up.`;
+
+    // Socket.IO + Push Notification
+    emitToUser(targetUserId, 'notification', {
+      type: 'group:pay_now_reminder',
+      message,
+      actorName: adminUser.fullName,
+      amount: owedTotal,
+      adminUpiId: adminUser.upiId || '',
+      adminQrCodeUrl: adminUser.qrCodeUrl || null,
+      timestamp: new Date().toISOString(),
+    });
+
+    sendPushToUser(targetUserId, {
+      title: '⚡ Pay Now Reminder',
+      body: message,
+      data: { type: 'group:pay_now_reminder', targetUserId },
+    });
+
+    return res.json({
+      message: `Payment reminder sent successfully to ${targetUser.fullName}`
+    });
+  } catch (error) {
+    console.error('Send Payment Reminder Error:', error);
+    return res.status(500).json({ message: 'Server error sending payment reminder' });
   }
 };
 
@@ -191,7 +317,6 @@ const leaveGroup = async (req, res) => {
     const balances = await calculateGroupBalances(groupId, req.user._id.toString());
     const userSummary = balances.currentUserSummary;
 
-    // Guard rule: Cannot leave group if user has pending dues (total owed or total receives > 0)
     if (userSummary.youNeedToPayTotal > 0 || userSummary.youWillReceiveTotal > 0) {
       return res.status(400).json({
         message: 'Please settle all balances before leaving the group.',
@@ -202,14 +327,12 @@ const leaveGroup = async (req, res) => {
 
     await GroupMember.deleteOne({ _id: membership._id });
 
-    // If remaining members exist, transfer creator role if leaving user was creator
     if (membership.role === 'creator') {
       const nextMember = await GroupMember.findOne({ groupId });
       if (nextMember) {
         nextMember.role = 'creator';
         await nextMember.save();
       } else {
-        // No members left, cleanup group
         await Group.deleteOne({ _id: groupId });
       }
     }
@@ -236,7 +359,6 @@ const deleteGroup = async (req, res) => {
 
     const groupId = membership.groupId;
 
-    // Cleanup all group data
     await GroupMember.deleteMany({ groupId });
     await Expense.deleteMany({ groupId });
     await Settlement.deleteMany({ groupId });
@@ -254,6 +376,8 @@ module.exports = {
   createGroup,
   joinGroup,
   getGroupInfo,
+  setPayday,
+  sendPaymentReminder,
   leaveGroup,
   deleteGroup
 };

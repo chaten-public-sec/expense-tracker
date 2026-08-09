@@ -1,7 +1,7 @@
 const Expense = require('../models/Expense');
 const GroupMember = require('../models/GroupMember');
 const Activity = require('../models/Activity');
-const { uploadToCloudinary } = require('../config/cloudinary');
+const { uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 const { emitToGroup, emitToUsers } = require('../socket/socketManager');
 const { sendPushToGroup, sendPushToUsers } = require('../services/pushService');
 
@@ -34,7 +34,7 @@ const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) =
 // @route POST /api/expenses
 const createExpense = async (req, res) => {
   try {
-    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl } = req.body;
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId } = req.body;
 
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Expense title is required' });
@@ -72,13 +72,14 @@ const createExpense = async (req, res) => {
       splitDetails,
       paymentMode: paymentMode || 'cash',
       screenshotUrl: screenshotUrl || null,
+      screenshotPublicId: screenshotPublicId || null,
       notes: notes || '',
       date: new Date()
     });
 
     const populatedExpense = await Expense.findById(expense._id)
-      .populate('paidBy', 'fullName email phone')
-      .populate('splitDetails.user', 'fullName email phone');
+      .populate('paidBy', 'fullName email phone upiId qrCodeUrl')
+      .populate('splitDetails.user', 'fullName email phone upiId qrCodeUrl');
 
     // Create activity log
     await Activity.create({
@@ -103,11 +104,9 @@ const createExpense = async (req, res) => {
     };
 
     if (splitType === 'everyone' || !splitBetween || splitBetween.length === 0) {
-      // Notify all group members except the creator
       emitToGroup(groupId, 'notification', notificationData, req.user._id.toString());
       sendPushToGroup(groupId, pushPayload, req.user._id.toString());
     } else {
-      // Notify only specific split members
       emitToUsers(finalSplitBetween, 'notification', notificationData, req.user._id.toString());
       sendPushToUsers(finalSplitBetween, pushPayload, req.user._id.toString());
     }
@@ -130,8 +129,8 @@ const getExpenses = async (req, res) => {
 
     const expenses = await Expense.find({ groupId: membership.groupId })
       .sort({ date: -1 })
-      .populate('paidBy', 'fullName email phone')
-      .populate('splitDetails.user', 'fullName email phone');
+      .populate('paidBy', 'fullName email phone upiId qrCodeUrl')
+      .populate('splitDetails.user', 'fullName email phone upiId qrCodeUrl');
 
     return res.json(expenses);
   } catch (error) {
@@ -145,8 +144,8 @@ const getExpenses = async (req, res) => {
 const getExpenseById = async (req, res) => {
   try {
     const expense = await Expense.findById(req.params.id)
-      .populate('paidBy', 'fullName email phone')
-      .populate('splitDetails.user', 'fullName email phone');
+      .populate('paidBy', 'fullName email phone upiId qrCodeUrl')
+      .populate('splitDetails.user', 'fullName email phone upiId qrCodeUrl');
 
     if (!expense) {
       return res.status(404).json({ message: 'Expense not found' });
@@ -163,7 +162,7 @@ const getExpenseById = async (req, res) => {
 // @route PUT /api/expenses/:id
 const updateExpense = async (req, res) => {
   try {
-    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl } = req.body;
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId } = req.body;
     const expense = await Expense.findById(req.params.id);
 
     if (!expense) {
@@ -200,6 +199,11 @@ const updateExpense = async (req, res) => {
       payerId
     );
 
+    // Clean up old Cloudinary screenshot if replaced
+    if (screenshotPublicId !== undefined && expense.screenshotPublicId && expense.screenshotPublicId !== screenshotPublicId) {
+      await deleteFromCloudinary(expense.screenshotPublicId);
+    }
+
     expense.title = title !== undefined ? title.trim() : expense.title;
     expense.amount = numAmount;
     expense.paidBy = payerId;
@@ -208,13 +212,14 @@ const updateExpense = async (req, res) => {
     expense.splitDetails = splitDetails;
     expense.paymentMode = paymentMode || expense.paymentMode;
     if (screenshotUrl !== undefined) expense.screenshotUrl = screenshotUrl;
+    if (screenshotPublicId !== undefined) expense.screenshotPublicId = screenshotPublicId;
     if (notes !== undefined) expense.notes = notes;
 
     await expense.save();
 
     const updatedExpense = await Expense.findById(expense._id)
-      .populate('paidBy', 'fullName email phone')
-      .populate('splitDetails.user', 'fullName email phone');
+      .populate('paidBy', 'fullName email phone upiId qrCodeUrl')
+      .populate('splitDetails.user', 'fullName email phone upiId qrCodeUrl');
 
     await Activity.create({
       groupId: expense.groupId,
@@ -273,6 +278,11 @@ const deleteExpense = async (req, res) => {
     const groupId = expense.groupId;
     const expenseAmount = expense.amount;
 
+    // Feature 1: Delete bill screenshot proof from Cloudinary if it exists
+    if (expense.screenshotPublicId) {
+      await deleteFromCloudinary(expense.screenshotPublicId);
+    }
+
     await Expense.deleteOne({ _id: expense._id });
 
     await Activity.create({
@@ -311,8 +321,8 @@ const uploadScreenshot = async (req, res) => {
       return res.status(400).json({ message: 'No image file uploaded' });
     }
 
-    const uploadResult = await uploadToCloudinary(req.file.buffer);
-    return res.json({ imageUrl: uploadResult.secure_url });
+    const uploadResult = await uploadToCloudinary(req.file.buffer, 'expense_tracker/screenshots');
+    return res.json({ imageUrl: uploadResult.secure_url, publicId: uploadResult.public_id });
   } catch (error) {
     console.error('Upload Screenshot Error:', error);
     return res.status(500).json({ message: 'Failed to upload screenshot image' });

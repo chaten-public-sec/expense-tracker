@@ -50,6 +50,10 @@ const expenseSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  screenshotPublicId: {
+    type: String,
+    default: null
+  },
   notes: {
     type: String,
     trim: true,

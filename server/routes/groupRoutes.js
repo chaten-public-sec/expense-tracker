@@ -4,6 +4,8 @@ const {
   createGroup,
   joinGroup,
   getGroupInfo,
+  setPayday,
+  sendPaymentReminder,
   leaveGroup,
   deleteGroup
 } = require('../controllers/groupController');
@@ -14,6 +16,8 @@ router.use(protect);
 router.post('/', createGroup);
 router.post('/join', joinGroup);
 router.get('/info', getGroupInfo);
+router.put('/payday', setPayday);
+router.post('/remind-member', sendPaymentReminder);
 router.post('/leave', leaveGroup);
 router.delete('/', deleteGroup);
 

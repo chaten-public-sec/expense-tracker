@@ -1,12 +1,17 @@
-import React from 'react';
-import { Modal, Avatar, Tag, Typography, Statistic, Row, Col, Card, Space, Divider, Button } from 'antd';
+import React, { useState } from 'react';
+import { Modal, Avatar, Tag, Typography, Statistic, Row, Col, Card, Space, Divider, Button, Image } from 'antd';
 import {
   UserOutlined,
   MailOutlined,
   PhoneOutlined,
   CalendarOutlined,
   CrownOutlined,
+  CreditCardOutlined,
+  CopyOutlined,
+  CheckOutlined,
+  QrcodeOutlined,
 } from '@ant-design/icons';
+import { useToast } from '../ui/Toast';
 import { GroupMember } from '../../types';
 
 const { Title, Text } = Typography;
@@ -22,6 +27,9 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   onClose,
   member,
 }) => {
+  const { showSuccess } = useToast();
+  const [copied, setCopied] = useState(false);
+
   if (!member) return null;
 
   const formatDate = (dateStr?: string) => {
@@ -30,6 +38,15 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
       month: 'short',
       year: 'numeric',
     });
+  };
+
+  const copyUPI = () => {
+    if (member.upiId) {
+      navigator.clipboard.writeText(member.upiId);
+      setCopied(true);
+      showSuccess(`UPI ID ${member.upiId} copied!`);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
@@ -74,7 +91,7 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
           </Tag>
         </div>
 
-        {/* Contact Info */}
+        {/* Contact & UPI Info */}
         <Card size="small" style={{ background: '#fafafa', borderRadius: 8, textAlign: 'left', marginBottom: 16 }}>
           <Space style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 8 }}>
             <Space>
@@ -85,6 +102,25 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
               <PhoneOutlined style={{ color: '#8c8c8c' }} />
               <Text style={{ fontSize: 13 }}>{member.phone || 'No phone number'}</Text>
             </Space>
+
+            {member.upiId && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <Space>
+                  <CreditCardOutlined style={{ color: '#1677ff' }} />
+                  <Text code style={{ fontSize: 12, fontWeight: 600 }}>
+                    {member.upiId}
+                  </Text>
+                </Space>
+                <Button
+                  size="small"
+                  icon={copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+                  onClick={copyUPI}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            )}
+
             <Divider style={{ margin: '6px 0' }} />
             <Space>
               <CalendarOutlined style={{ color: '#8c8c8c' }} />
@@ -94,6 +130,22 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
             </Space>
           </Space>
         </Card>
+
+        {/* QR Code Display */}
+        {member.qrCodeUrl && (
+          <div style={{ marginBottom: 16, padding: 12, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+              UPI Payment QR Code
+            </Text>
+            <Image
+              src={member.qrCodeUrl}
+              alt={`${member.fullName} QR Code`}
+              width={140}
+              height={140}
+              style={{ objectFit: 'contain', borderRadius: 6 }}
+            />
+          </div>
+        )}
 
         {/* Financial Metrics */}
         <Row gutter={8}>
