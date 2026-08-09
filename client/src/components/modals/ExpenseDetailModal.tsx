@@ -49,7 +49,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
   if (!expense) return null;
 
   const payerId = typeof expense.paidBy === 'string' ? expense.paidBy : expense.paidBy?._id;
-  const isOwnerOrAdmin = user && (user._id === payerId || userRole === 'creator');
+  const isCreatorOrSuperAdmin = user && (user._id === payerId || user.isSuperAdmin || user.email === 'admin@gmail.com');
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -95,7 +95,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
       }
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          {isOwnerOrAdmin ? (
+          {isCreatorOrSuperAdmin ? (
             <Popconfirm
               title="Delete Expense"
               description="Are you sure you want to delete this expense record?"
@@ -109,7 +109,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
               </Button>
             </Popconfirm>
           ) : (
-            <Tooltip title="Only the person who added this expense or group admin can delete it">
+            <Tooltip title="Only the person who created this expense can delete it">
               <Button danger disabled icon={<LockOutlined />}>
                 Delete
               </Button>
@@ -118,7 +118,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
 
           <Space>
             <Button onClick={onClose}>Close</Button>
-            {isOwnerOrAdmin ? (
+            {isCreatorOrSuperAdmin ? (
               <Button
                 type="primary"
                 icon={<EditOutlined />}
@@ -130,7 +130,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
                 Edit
               </Button>
             ) : (
-              <Tooltip title="Only the person who added this expense or group admin can edit it">
+              <Tooltip title="Only the person who created this expense can edit it">
                 <Button type="primary" disabled icon={<LockOutlined />}>
                   Edit
                 </Button>

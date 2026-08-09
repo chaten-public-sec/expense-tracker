@@ -68,7 +68,9 @@ export const Login: React.FC = () => {
 
       showSuccess(`Welcome back, ${res.data.fullName}!`);
 
-      if (res.data.group) {
+      if (res.data.isSuperAdmin || res.data.email === 'admin@gmail.com') {
+        navigate('/admin', { replace: true });
+      } else if (res.data.group) {
         navigate('/dashboard', { replace: true });
       } else {
         navigate('/no-group', { replace: true });

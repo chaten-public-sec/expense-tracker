@@ -138,6 +138,14 @@ export const Dashboard: React.FC = () => {
     return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   };
 
+  const formatFullTime = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const agoStr = formatTimeAgo(dateStr);
+    return `${timeStr} (${agoStr})`;
+  };
+
   const youNeedToPayTotal = data?.balances?.youNeedToPayTotal || 0;
   const youWillReceiveTotal = data?.balances?.youWillReceiveTotal || 0;
   const youNeedToPayList = data?.balances?.youNeedToPayList || [];
@@ -522,6 +530,51 @@ export const Dashboard: React.FC = () => {
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No expenses recorded yet" style={{ margin: '16px 0' }} />
         )}
       </Card>
+
+      {/* Recent Group Activity Logs */}
+      {data?.recentActivity && data.recentActivity.length > 0 && (
+        <Card
+          title={
+            <Space size={6}>
+              <ClockCircleOutlined style={{ color: '#1677ff' }} />
+              <span style={{ fontSize: 14 }}>Recent Group Activity</span>
+            </Space>
+          }
+          style={{ borderRadius: 14 }}
+          styles={{ body: { padding: 12 } }}
+        >
+          <Flex vertical gap={8}>
+            {data.recentActivity.slice(0, 6).map((act) => (
+              <div
+                key={act._id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 10px',
+                  background: '#fafafa',
+                  borderRadius: 8,
+                  border: '1px solid #f0f0f0',
+                }}
+              >
+                <Space size={8}>
+                  <Avatar size="small" style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
+                    {act.user?.fullName?.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <div>
+                    <Text style={{ fontSize: 12, fontWeight: 500, display: 'block' }}>
+                      <strong>{act.user?.fullName}</strong> {act.action}
+                    </Text>
+                  </div>
+                </Space>
+                <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>
+                  {formatFullTime(act.createdAt)}
+                </Tag>
+              </div>
+            ))}
+          </Flex>
+        </Card>
+      )}
 
       {/* Modals */}
       <AddExpenseModal

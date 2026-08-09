@@ -4,7 +4,7 @@ import {
   DashboardOutlined,
   FileTextOutlined,
   TeamOutlined,
-  SafetyCertificateOutlined,
+  HistoryOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 
@@ -15,7 +15,7 @@ export const BottomNav: React.FC = () => {
     { label: 'Home', path: '/dashboard', icon: <DashboardOutlined style={{ fontSize: 18 }} /> },
     { label: 'Expenses', path: '/expenses', icon: <FileTextOutlined style={{ fontSize: 18 }} /> },
     { label: 'Members', path: '/members', icon: <TeamOutlined style={{ fontSize: 18 }} /> },
-    { label: 'Settle', path: '/settlements', icon: <SafetyCertificateOutlined style={{ fontSize: 18 }} /> },
+    { label: 'History', path: '/history', icon: <HistoryOutlined style={{ fontSize: 18 }} /> },
     { label: 'Profile', path: '/profile', icon: <UserOutlined style={{ fontSize: 18 }} /> },
   ];
 
@@ -36,7 +36,7 @@ export const BottomNav: React.FC = () => {
     >
       <div style={{ maxWidth: 480, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path;
+          const isActive = location.pathname === item.path || (item.path === '/history' && location.pathname === '/settlements');
           return (
             <NavLink
               key={item.path}

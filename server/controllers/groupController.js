@@ -150,7 +150,7 @@ const getGroupInfo = async (req, res) => {
     }
 
     const group = membership.groupId;
-    const { totalPaidMap, totalOwesMap, totalReceivesMap } = await calculateGroupBalances(group._id);
+    const { totalPaidMap, everyoneShareMap, specificShareMap, totalOwesMap, totalReceivesMap, pairwiseOwesMap, pairwiseReceivesMap } = await calculateGroupBalances(group._id);
 
     const members = await GroupMember.find({ groupId: group._id }).populate('userId', 'fullName email phone upiId qrCodeUrl');
 
@@ -166,8 +166,13 @@ const getGroupInfo = async (req, res) => {
         role: m.role,
         joinedAt: m.joinedAt,
         totalPaid: Math.round((totalPaidMap[uId] || 0) * 100) / 100,
+        everyoneShare: Math.round((everyoneShareMap[uId] || 0) * 100) / 100,
+        specificShare: Math.round((specificShareMap[uId] || 0) * 100) / 100,
         totalOwes: Math.round((totalOwesMap[uId] || 0) * 100) / 100,
-        totalReceives: Math.round((totalReceivesMap[uId] || 0) * 100) / 100
+        totalReceives: Math.round((totalReceivesMap[uId] || 0) * 100) / 100,
+        netBalance: Math.round(((totalReceivesMap[uId] || 0) - (totalOwesMap[uId] || 0)) * 100) / 100,
+        owesList: pairwiseOwesMap[uId] || [],
+        receivesList: pairwiseReceivesMap[uId] || []
       };
     });
 

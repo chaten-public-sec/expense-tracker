@@ -144,7 +144,7 @@ export const Profile: React.FC = () => {
   const handleSavePayday = async (value: number | null) => {
     try {
       setIsSavingPayday(true);
-      await api.put('/api/groups/payday', { payday: value });
+      await api.put('/groups/payday', { payday: value });
       setPaydayValue(value);
       showSuccess(value ? `Group Payday updated to ${value}th of every month!` : 'Payday cycle disabled');
       await refreshUserData();

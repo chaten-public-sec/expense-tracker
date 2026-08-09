@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const {
   createSettlement,
-  verifyOTP,
+  approveSettlement,
+  rejectSettlement,
+  deleteSettlementProof,
   cancelSettlement,
   getSettlements
 } = require('../controllers/settlementController');
@@ -12,7 +14,9 @@ router.use(protect);
 
 router.post('/', createSettlement);
 router.get('/', getSettlements);
-router.post('/:id/verify', verifyOTP);
+router.post('/:id/approve', approveSettlement);
+router.post('/:id/reject', rejectSettlement);
+router.delete('/:id/proof', deleteSettlementProof);
 router.post('/:id/cancel', cancelSettlement);
 
 module.exports = router;

@@ -117,6 +117,7 @@ const expenseRoutes = require('./routes/expenseRoutes');
 const settlementRoutes = require('./routes/settlementRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 // API Routes registered under /api
 app.use('/api/auth', authRoutes);
@@ -125,6 +126,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Fallback Route Aliases (Handles requests if /api prefix was omitted in client config)
 app.use('/auth', authRoutes);
@@ -133,6 +135,7 @@ app.use('/expenses', expenseRoutes);
 app.use('/settlements', settlementRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/notifications', notificationRoutes);
+app.use('/admin', adminRoutes);
 
 // Health & Ping endpoints for Render / Cron-Job uptime keep-alive
 app.get(['/health', '/api/health'], (req, res) => {
@@ -166,6 +169,10 @@ const httpServer = http.createServer(app);
 // Start Server after DB Connection attempt
 const startServer = async () => {
   await connectDB();
+
+  // Initialize Super Admin account (admin@gmail.com / admin123)
+  const initSuperAdmin = require('./utils/initAdmin');
+  await initSuperAdmin();
 
   // Initialize Socket.IO on the HTTP server
   socketManager.init(httpServer, corsOptions);

@@ -16,6 +16,7 @@ import {
   CheckCircleOutlined,
   TeamOutlined,
   ClearOutlined,
+  CrownOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -55,6 +56,8 @@ export const Navbar: React.FC = () => {
   const [notifOpen, setNotifOpen] = useState(false);
   const navigate = useNavigate();
 
+  const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
+
   const copyInviteCode = () => {
     if (group?.inviteCode) {
       navigator.clipboard.writeText(group.inviteCode);
@@ -65,6 +68,12 @@ export const Navbar: React.FC = () => {
   };
 
   const userMenuItems: MenuProps['items'] = [
+    ...(isSuperAdmin ? [{
+      key: 'admin',
+      icon: <CrownOutlined style={{ color: '#faad14' }} />,
+      label: 'Super Admin Dashboard',
+      onClick: () => navigate('/admin'),
+    }] : []),
     {
       key: 'profile',
       icon: <UserOutlined />,
@@ -89,7 +98,7 @@ export const Navbar: React.FC = () => {
     if (notif.type.startsWith('expense:')) {
       navigate('/expenses');
     } else if (notif.type.startsWith('settlement:')) {
-      navigate('/settlements');
+      navigate('/history');
     } else if (notif.type === 'group:member_joined') {
       navigate('/members');
     }
@@ -192,7 +201,7 @@ export const Navbar: React.FC = () => {
             </Text>
           ) : (
             <Text type="secondary" style={{ fontSize: 11, display: 'block', lineHeight: 1.2 }}>
-              No active group
+              {isSuperAdmin ? 'Super Admin Mode' : 'No active group'}
             </Text>
           )}
         </div>
@@ -200,6 +209,20 @@ export const Navbar: React.FC = () => {
 
       {/* Right Actions */}
       <Space size={4} align="center">
+        {isSuperAdmin && (
+          <Tooltip title="Super Admin Panel">
+            <Button
+              type="primary"
+              size="small"
+              icon={<CrownOutlined style={{ color: '#faad14' }} />}
+              onClick={() => navigate('/admin')}
+              style={{ borderRadius: 8, height: 30, background: '#0f172a', borderColor: '#0f172a' }}
+            >
+              Admin
+            </Button>
+          </Tooltip>
+        )}
+
         {group && (
           <Tooltip title="Tap to copy invite code">
             <Button
@@ -258,15 +281,15 @@ export const Navbar: React.FC = () => {
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" arrow trigger={['click']}>
             <Avatar
               style={{
-                backgroundColor: '#0f172a',
+                backgroundColor: isSuperAdmin ? '#faad14' : '#0f172a',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
               size={30}
-              icon={<UserOutlined />}
+              icon={isSuperAdmin ? <CrownOutlined /> : <UserOutlined />}
             >
-              {user.fullName?.charAt(0).toUpperCase()}
+              {!isSuperAdmin && user.fullName?.charAt(0).toUpperCase()}
             </Avatar>
           </Dropdown>
         )}

@@ -7,20 +7,28 @@ import {
   Alert,
   Space,
   Tag,
+  Card,
+  Image,
+  Upload,
+  Divider,
+  Segmented,
 } from 'antd';
 import {
-  SafetyCertificateOutlined,
+  CheckCircleOutlined,
   CopyOutlined,
   CheckOutlined,
+  UploadOutlined,
+  QrcodeOutlined,
+  CreditCardOutlined,
   ClockCircleOutlined,
-  KeyOutlined,
-  CheckCircleOutlined,
+  SendOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { Settlement, OwedPerson } from '../../types';
 import api from '../../services/api';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 interface SettlementModalProps {
   isOpen: boolean;
@@ -37,109 +45,89 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   pendingSettlement,
   onSettlementUpdated,
 }) => {
-  const { showToast } = useToast();
+  const { showSuccess, showError } = useToast();
 
-  // Initiator (Payer) state
-  const [confirmStep, setConfirmStep] = useState(true);
-  const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(300);
-  const [copiedOtp, setCopiedOtp] = useState(false);
-
-  // Receiver OTP entry state
-  const [otpInput, setOtpInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Timer countdown for active OTP
-  useEffect(() => {
-    let interval: any = null;
-    if (expiresAt) {
-      interval = setInterval(() => {
-        const remaining = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
-        setTimeLeft(remaining);
-        if (remaining === 0) {
-          clearInterval(interval);
-        }
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [expiresAt]);
+  const [paymentMode, setPaymentMode] = useState<'paid' | 'will_pay_soon'>('paid');
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [proofPublicId, setProofPublicId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [note, setNote] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setConfirmStep(true);
-      setGeneratedOtp(null);
-      setExpiresAt(null);
-      setOtpInput('');
-      setError('');
-      setCopiedOtp(false);
+      setPaymentMode('paid');
+      setProofUrl(null);
+      setProofPublicId(null);
+      setNote('');
+      setCopiedUpi(false);
     }
-  }, [isOpen, targetPerson, pendingSettlement]);
+  }, [isOpen, targetPerson]);
 
-  // Handle Payer initiating payment
-  const handleInitiatePayment = async () => {
-    if (!targetPerson) return;
-    try {
-      setIsLoading(true);
-      setError('');
-      const res = await api.post('/settlements', {
-        receiverId: targetPerson.user._id,
-        amount: targetPerson.amount,
-      });
+  const recipient = targetPerson?.user;
+  const amountToPay = targetPerson?.amount || 0;
 
-      setGeneratedOtp(res.data.otp);
-      setExpiresAt(res.data.expiresAt);
-      setConfirmStep(false);
-      showToast('Payment initiated! Share the 6-digit OTP with receiver to verify.', 'info');
-      onSettlementUpdated();
-    } catch (err: any) {
-      console.error('Initiate Payment Error:', err);
-      setError(err.response?.data?.message || 'Failed to initiate payment settlement');
-    } finally {
-      setIsLoading(false);
+  const copyUPI = () => {
+    if (recipient?.upiId) {
+      navigator.clipboard.writeText(recipient.upiId);
+      setCopiedUpi(true);
+      showSuccess(`UPI ID ${recipient.upiId} copied!`);
+      setTimeout(() => setCopiedUpi(false), 2000);
     }
   };
 
-  // Handle Receiver verifying OTP
-  const handleVerifyOtp = async () => {
-    if (!pendingSettlement) return;
-
-    if (!otpInput || otpInput.trim().length !== 6) {
-      setError('Please enter the full 6-digit OTP code');
-      return;
-    }
+  const handleProofUpload = async (file: File) => {
+    const formData = new FormData();
+    formData.append('image', file);
 
     try {
-      setIsLoading(true);
-      setError('');
-      await api.post(`/settlements/${pendingSettlement._id}/verify`, {
-        otp: otpInput.trim(),
+      setIsUploading(true);
+      const res = await api.post('/auth/upload-qr', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setProofUrl(res.data.imageUrl);
+      setProofPublicId(res.data.publicId);
+      showSuccess('Payment proof screenshot uploaded!');
+    } catch (err: any) {
+      console.error('Proof Upload Error:', err);
+      showError('Failed to upload proof screenshot');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!recipient) return;
+
+    try {
+      setIsSubmitting(true);
+      await api.post('/settlements', {
+        receiverId: recipient._id,
+        amount: amountToPay,
+        actionType: paymentMode,
+        proofUrl,
+        proofPublicId,
+        note,
       });
 
-      showToast(`Settlement of ₹${pendingSettlement.amount} verified successfully!`, 'success');
+      if (paymentMode === 'paid') {
+        showSuccess(`Payment of ₹${amountToPay.toFixed(2)} submitted to ${recipient.fullName}!`);
+      } else {
+        showSuccess(`Notified ${recipient.fullName} that you will pay soon.`);
+      }
+
       onSettlementUpdated();
       onClose();
     } catch (err: any) {
-      console.error('Verify OTP Error:', err);
-      setError(err.response?.data?.message || 'Invalid or expired OTP. Verification failed.');
+      console.error('Submit Settlement Error:', err);
+      showError(err.response?.data?.message || 'Failed to submit settlement');
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const copyOtpToClipboard = () => {
-    if (generatedOtp) {
-      navigator.clipboard.writeText(generatedOtp);
-      setCopiedOtp(true);
-      showToast('OTP copied to clipboard!', 'success');
-      setTimeout(() => setCopiedOtp(false), 2000);
-    }
-  };
-
-  const isReceiverMode = !!pendingSettlement;
+  if (!recipient) return null;
 
   return (
     <Modal
@@ -147,179 +135,161 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       onCancel={onClose}
       title={
         <Space align="center">
-          <SafetyCertificateOutlined style={{ color: '#1677ff', fontSize: 18 }} />
-          <span>{isReceiverMode ? 'Verify Received Payment' : 'Settle Payment Dues'}</span>
+          <DollarOutlined style={{ color: '#1677ff' }} />
+          <span>Settle Payment with {recipient.fullName}</span>
         </Space>
       }
-      footer={null}
-      width={460}
+      footer={[
+        <Button key="cancel" onClick={onClose}>
+          Cancel
+        </Button>,
+        <Button
+          key="submit"
+          type="primary"
+          loading={isSubmitting}
+          icon={paymentMode === 'paid' ? <CheckCircleOutlined /> : <SendOutlined />}
+          onClick={handleSubmit}
+        >
+          {paymentMode === 'paid' ? 'Confirm Payment' : 'Send Promise Notice'}
+        </Button>,
+      ]}
+      width={480}
+      centered
     >
-      {error && (
-        <Alert
-          title={error}
-          type="error"
-          showIcon
-          closable
-          onClose={() => setError('')}
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      <div style={{ padding: '8px 0' }}>
+        {/* Amount Card */}
+        <Card size="small" style={{ background: '#f8fafc', borderRadius: 10, textAlign: 'center', marginBottom: 14 }}>
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            Total Amount Due
+          </Text>
+          <Title level={3} style={{ margin: '2px 0 0', color: '#1677ff' }}>
+            ₹{amountToPay.toFixed(2)}
+          </Title>
+        </Card>
 
-      {/* MODE 1: RECEIVER ENTERING OTP */}
-      {isReceiverMode ? (
-        <div style={{ textAlign: 'center', padding: '8px 0' }}>
-          <div
-            style={{
-              padding: 16,
-              background: '#f8fafc',
-              borderRadius: 10,
-              border: '1px solid #e2e8f0',
-              marginBottom: 16,
-            }}
-          >
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              Incoming Payment From
-            </Text>
-            <Title level={4} style={{ margin: '4px 0' }}>
-              {pendingSettlement.payer?.fullName}
-            </Title>
-            <Text strong style={{ fontSize: 22, color: '#1677ff' }}>
-              ₹{pendingSettlement.amount.toFixed(2)}
-            </Text>
-          </div>
-
-          <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 16 }}>
-            Ask <strong>{pendingSettlement.payer?.fullName}</strong> for the 6-digit OTP generated on their device:
-          </Paragraph>
-
-          <Input
-            placeholder="• • • • • •"
-            value={otpInput}
-            onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            maxLength={6}
-            size="large"
-            style={{
-              textAlign: 'center',
-              letterSpacing: 12,
-              fontFamily: 'monospace',
-              fontSize: 24,
-              fontWeight: 700,
-              marginBottom: 20,
-              height: 52,
-            }}
-          />
-
-          <Button
-            type="primary"
-            size="large"
-            block
-            onClick={handleVerifyOtp}
-            loading={isLoading}
-            disabled={otpInput.length !== 6}
-            icon={<CheckCircleOutlined />}
-          >
-            Verify & Confirm Receipt
-          </Button>
-        </div>
-      ) : (
-        /* MODE 2: PAYER INITIATING PAYMENT */
-        <div>
-          {confirmStep ? (
-            <div style={{ textAlign: 'center', padding: '8px 0' }}>
-              <div
-                style={{
-                  padding: 16,
-                  background: '#f8fafc',
-                  borderRadius: 10,
-                  border: '1px solid #e2e8f0',
-                  marginBottom: 16,
-                }}
-              >
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  You are paying to
-                </Text>
-                <Title level={4} style={{ margin: '4px 0' }}>
-                  {targetPerson?.user?.fullName}
-                </Title>
-                <Text strong style={{ fontSize: 24, color: '#ef4444' }}>
-                  ₹{targetPerson?.amount?.toFixed(2)}
-                </Text>
-              </div>
-
-              <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
-                Clicking confirm will generate a one-time 6-digit verification code to share with {targetPerson?.user?.fullName}.
-              </Paragraph>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Button block onClick={onClose} disabled={isLoading}>
-                  Cancel
-                </Button>
-                <Button
-                  type="primary"
-                  block
-                  onClick={handleInitiatePayment}
-                  loading={isLoading}
-                  icon={<KeyOutlined />}
-                >
-                  Generate Payment OTP
-                </Button>
-              </div>
+        {/* QR Code & UPI Details FIRST */}
+        <Card
+          size="small"
+          title={
+            <Space size={6}>
+              <QrcodeOutlined style={{ color: '#1677ff' }} />
+              <Text strong style={{ fontSize: 12 }}>1. Pay via Recipient UPI / QR Code</Text>
+            </Space>
+          }
+          style={{ borderRadius: 10, marginBottom: 14, background: '#fafafa' }}
+          styles={{ body: { padding: 12, textAlign: 'center' } }}
+        >
+          {recipient.qrCodeUrl ? (
+            <div style={{ marginBottom: 10 }}>
+              <Image
+                src={recipient.qrCodeUrl}
+                alt="Recipient Payment QR Code"
+                width={150}
+                height={150}
+                style={{ objectFit: 'contain', borderRadius: 8, border: '1px solid #e2e8f0' }}
+              />
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                Scan with GPay, PhonePe, Paytm, or BHIM
+              </Text>
             </div>
           ) : (
-            /* OTP GENERATED VIEW */
-            <div style={{ textAlign: 'center', padding: '8px 0' }}>
-              <Alert
-                title="Show this OTP to recipient to complete settlement"
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-              />
+            <Alert
+              message="No QR Code Uploaded"
+              description="Recipient has not uploaded a QR code yet. Pay using their UPI ID below."
+              type="info"
+              showIcon
+              style={{ borderRadius: 8, marginBottom: 10, fontSize: 12 }}
+            />
+          )}
 
-              <div
-                style={{
-                  padding: 20,
-                  background: '#fafafa',
-                  borderRadius: 12,
-                  border: '2px dashed #1677ff',
-                  marginBottom: 16,
-                }}
-              >
-                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
-                  One-Time Verification PIN
+          {recipient.upiId ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <Space size={8}>
+                <CreditCardOutlined style={{ color: '#1677ff' }} />
+                <Text code style={{ fontSize: 13, fontWeight: 600 }}>
+                  {recipient.upiId}
                 </Text>
-                <Title
-                  level={2}
-                  style={{
-                    margin: 0,
-                    letterSpacing: 10,
-                    fontFamily: 'monospace',
-                    color: '#1677ff',
-                    fontWeight: 800,
-                  }}
-                >
-                  {generatedOtp}
-                </Title>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
-                <Button
-                  icon={copiedOtp ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
-                  onClick={copyOtpToClipboard}
-                >
-                  {copiedOtp ? 'Copied' : 'Copy Code'}
-                </Button>
-                <Tag icon={<ClockCircleOutlined />} color={timeLeft < 60 ? 'error' : 'processing'}>
-                  Expires in {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
-                </Tag>
-              </div>
-
-              <Button type="primary" block onClick={onClose}>
-                Done
+              </Space>
+              <Button
+                size="small"
+                icon={copiedUpi ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+                onClick={copyUPI}
+              >
+                {copiedUpi ? 'Copied' : 'Copy UPI'}
               </Button>
             </div>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Phone: {recipient.phone || recipient.email}
+            </Text>
           )}
+        </Card>
+
+        {/* Action Toggle: Paid vs Will Pay Soon */}
+        <div style={{ marginBottom: 14 }}>
+          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+            2. Select Payment Status
+          </Text>
+          <Segmented
+            block
+            value={paymentMode}
+            onChange={(val) => setPaymentMode(val as 'paid' | 'will_pay_soon')}
+            options={[
+              { label: 'I Have Paid', value: 'paid', icon: <CheckCircleOutlined /> },
+              { label: 'Will Pay Soon', value: 'will_pay_soon', icon: <ClockCircleOutlined /> },
+            ]}
+          />
         </div>
-      )}
+
+        {paymentMode === 'paid' ? (
+          <div>
+            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
+              3. Upload Payment Proof Screenshot (Optional)
+            </Text>
+            {proofUrl ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f6ffed', padding: 8, borderRadius: 8, border: '1px solid #b7eb8f', marginBottom: 10 }}>
+                <Image src={proofUrl} width={50} height={50} style={{ objectFit: 'cover', borderRadius: 6 }} />
+                <div style={{ flex: 1 }}>
+                  <Text type="success" strong style={{ fontSize: 12, display: 'block' }}>Proof Attached!</Text>
+                  <Text type="secondary" style={{ fontSize: 10 }}>Saved on Cloudinary</Text>
+                </div>
+                <Button size="small" danger onClick={() => { setProofUrl(null); setProofPublicId(null); }}>
+                  Remove
+                </Button>
+              </div>
+            ) : (
+              <Upload
+                beforeUpload={(file) => {
+                  handleProofUpload(file);
+                  return false;
+                }}
+                showUploadList={false}
+                accept="image/*"
+              >
+                <Button icon={<UploadOutlined />} loading={isUploading} style={{ width: '100%', borderRadius: 8, marginBottom: 10 }}>
+                  {isUploading ? 'Uploading Screenshot...' : 'Upload Payment Screenshot'}
+                </Button>
+              </Upload>
+            )}
+
+            <Input.TextArea
+              rows={2}
+              placeholder="Add optional note (e.g. Paid via GPay Ref #12345)..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              style={{ borderRadius: 8 }}
+            />
+          </div>
+        ) : (
+          <Alert
+            message="Promise Notice"
+            description={`We will notify ${recipient.fullName} that you plan to pay soon.`}
+            type="warning"
+            showIcon
+            style={{ borderRadius: 8 }}
+          />
+        )}
+      </div>
     </Modal>
   );
 };

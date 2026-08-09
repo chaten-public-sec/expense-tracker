@@ -27,4 +27,11 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+const superAdminOnly = (req, res, next) => {
+  if (req.user && (req.user.isSuperAdmin || req.user.email === 'admin@gmail.com')) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Access denied: Super Admin privilege required.' });
+};
+
+module.exports = { protect, superAdminOnly };

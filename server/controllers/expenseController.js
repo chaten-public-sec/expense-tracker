@@ -89,17 +89,20 @@ const createExpense = async (req, res) => {
     });
 
     // --- Socket.IO + Push Notification ---
+    const perPersonShare = Math.round((numAmount / finalSplitBetween.length) * 100) / 100;
+    const splitTypeLabel = splitType === 'everyone' ? 'equal group share' : 'custom split share';
+
     const notificationData = {
       type: 'expense:created',
       expense: populatedExpense,
-      message: `${req.user.fullName} added "${expense.title}" — ₹${numAmount.toFixed(2)}`,
+      message: `${req.user.fullName} added "${expense.title}" (Total: ₹${numAmount.toFixed(2)}). Your ${splitTypeLabel} is ₹${perPersonShare.toFixed(2)}.`,
       actorName: req.user.fullName,
       timestamp: new Date().toISOString(),
     };
 
     const pushPayload = {
       title: `New Expense: ${expense.title}`,
-      body: `${req.user.fullName} added ₹${numAmount.toFixed(2)} — ${splitType === 'everyone' ? 'Split with everyone' : 'Split with specific members'}`,
+      body: `${req.user.fullName} added ₹${numAmount.toFixed(2)}. Your share is ₹${perPersonShare.toFixed(2)}.`,
       data: { type: 'expense:created', expenseId: expense._id.toString() },
     };
 
@@ -175,12 +178,12 @@ const updateExpense = async (req, res) => {
       return res.status(400).json({ message: 'You are not part of any group.' });
     }
 
-    const isOwner = expense.paidBy.toString() === req.user._id.toString();
-    const isAdmin = membership.role === 'creator' && membership.groupId.toString() === expense.groupId.toString();
+    const isPayer = expense.paidBy.toString() === req.user._id.toString();
+    const isSuperAdmin = req.user.isSuperAdmin || req.user.email === 'admin@gmail.com';
 
-    if (!isOwner && !isAdmin) {
+    if (!isPayer && !isSuperAdmin) {
       return res.status(403).json({
-        message: 'Forbidden: Only the person who added this expense or the group admin can edit it.'
+        message: 'Forbidden: Only the person who created this expense can edit it.'
       });
     }
 
@@ -265,12 +268,12 @@ const deleteExpense = async (req, res) => {
       return res.status(400).json({ message: 'You are not part of any group.' });
     }
 
-    const isOwner = expense.paidBy.toString() === req.user._id.toString();
-    const isAdmin = membership.role === 'creator' && membership.groupId.toString() === expense.groupId.toString();
+    const isPayer = expense.paidBy.toString() === req.user._id.toString();
+    const isSuperAdmin = req.user.isSuperAdmin || req.user.email === 'admin@gmail.com';
 
-    if (!isOwner && !isAdmin) {
+    if (!isPayer && !isSuperAdmin) {
       return res.status(403).json({
-        message: 'Forbidden: Only the person who added this expense or the group admin can delete it.'
+        message: 'Forbidden: Only the person who created this expense can delete it.'
       });
     }
 

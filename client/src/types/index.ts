@@ -6,6 +6,7 @@ export interface User {
   upiId?: string;
   qrCodeUrl?: string | null;
   qrCodePublicId?: string | null;
+  isSuperAdmin?: boolean;
   createdAt?: string;
 }
 
@@ -29,8 +30,13 @@ export interface GroupMember {
   role: 'creator' | 'member';
   joinedAt: string;
   totalPaid: number;
+  everyoneShare?: number;
+  specificShare?: number;
   totalOwes: number;
   totalReceives: number;
+  netBalance?: number;
+  owesList?: OwedPerson[];
+  receivesList?: OwedPerson[];
 }
 
 export interface BillingCycle {
@@ -70,9 +76,11 @@ export interface Settlement {
   payer: User;
   receiver: User;
   amount: number;
-  status: 'verification_pending' | 'completed' | 'cancelled' | 'expired';
-  expiresAt: string;
-  failedAttempts?: number;
+  status: 'completed' | 'paid_pending_approval' | 'will_pay_soon' | 'rejected' | 'cancelled';
+  proofUrl?: string | null;
+  proofPublicId?: string | null;
+  note?: string;
+  paidAt?: string;
   verifiedAt?: string;
   createdAt: string;
 }

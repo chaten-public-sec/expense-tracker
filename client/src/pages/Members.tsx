@@ -130,18 +130,18 @@ export const Members: React.FC = () => {
                     fontSize: 12,
                   }}
                 >
-                  <Space size={12}>
+                  <Space size={10} wrap>
                     <div>
                       <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Paid</Text>
-                      <Text strong style={{ fontSize: 12 }}>₹{m.totalPaid || 0}</Text>
+                      <Text strong style={{ fontSize: 12 }}>₹{(m.totalPaid || 0).toFixed(2)}</Text>
                     </div>
                     <div>
-                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Owes</Text>
-                      <Text strong style={{ fontSize: 12, color: '#ef4444' }}>₹{m.totalOwes || 0}</Text>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Group Share</Text>
+                      <Text strong style={{ fontSize: 12, color: '#1677ff' }}>₹{(m.everyoneShare || 0).toFixed(2)}</Text>
                     </div>
                     <div>
-                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Receives</Text>
-                      <Text strong style={{ fontSize: 12, color: '#10b981' }}>₹{m.totalReceives || 0}</Text>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Individual</Text>
+                      <Text strong style={{ fontSize: 12, color: '#722ed1' }}>₹{(m.specificShare || 0).toFixed(2)}</Text>
                     </div>
                   </Space>
 

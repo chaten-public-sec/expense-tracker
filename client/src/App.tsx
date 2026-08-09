@@ -15,7 +15,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m
 const Expenses = lazy(() => import('./pages/Expenses').then(m => ({ default: m.Expenses })));
 const Members = lazy(() => import('./pages/Members').then(m => ({ default: m.Members })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
-const Settlements = lazy(() => import('./pages/Settlements').then(m => ({ default: m.Settlements })));
+const History = lazy(() => import('./pages/History').then(m => ({ default: m.History })));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
 
 const PageLoader: React.FC = () => (
   <div
@@ -46,7 +47,9 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <Navigate to="/login" replace />;
   }
 
-  if (!group && location.pathname !== '/no-group' && location.pathname !== '/profile') {
+  const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
+
+  if (!group && !isSuperAdmin && location.pathname !== '/no-group' && location.pathname !== '/profile' && location.pathname !== '/admin') {
     return <Navigate to="/no-group" replace />;
   }
 
@@ -60,7 +63,7 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
       <main style={{ flex: 1, padding: '12px 12px 76px', width: '100%' }}>
         {children}
       </main>
-      {group && <BottomNav />}
+      {(group || isSuperAdmin) && <BottomNav />}
     </div>
   );
 };
@@ -162,10 +165,26 @@ export const App: React.FC = () => {
                       }
                     />
                     <Route
+                      path="/history"
+                      element={
+                        <ProtectedLayout>
+                          <History />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/admin"
+                      element={
+                        <ProtectedLayout>
+                          <AdminDashboard />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
                       path="/settlements"
                       element={
                         <ProtectedLayout>
-                          <Settlements />
+                          <History />
                         </ProtectedLayout>
                       }
                     />

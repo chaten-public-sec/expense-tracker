@@ -1,21 +1,16 @@
-const bcrypt = require('bcryptjs');
 const Settlement = require('../models/Settlement');
 const GroupMember = require('../models/GroupMember');
 const Activity = require('../models/Activity');
 const User = require('../models/User');
+const { deleteFromCloudinary } = require('../config/cloudinary');
 const { emitToUser } = require('../socket/socketManager');
 const { sendPushToUser } = require('../services/pushService');
 
-// Helper to generate 6-digit OTP
-const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-// @desc Initiate payment settlement (Payer generates OTP)
+// @desc Initiate payment settlement or promise (No OTP)
 // @route POST /api/settlements
 const createSettlement = async (req, res) => {
   try {
-    const { receiverId, amount } = req.body;
+    const { receiverId, amount, actionType, proofUrl, proofPublicId, note } = req.body;
 
     if (!receiverId) {
       return res.status(400).json({ message: 'Receiver is required' });
@@ -43,121 +38,97 @@ const createSettlement = async (req, res) => {
       return res.status(404).json({ message: 'Receiver user not found' });
     }
 
-    // Cancel any existing pending settlement between these two users
-    await Settlement.updateMany(
-      { groupId, payer: payerId, receiver: receiverId, status: 'verification_pending' },
-      { status: 'cancelled' }
-    );
-
-    // Generate 6-digit OTP & bcrypt hash
-    const rawOtp = generateOTP();
-    const salt = await bcrypt.genSalt(10);
-    const otpHash = await bcrypt.hash(rawOtp, salt);
-
-    // 2-minute validity
-    const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+    // Determine status:
+    // If actionType === 'will_pay_soon' -> status = 'will_pay_soon'
+    // If proofUrl is provided -> status = 'paid_pending_approval' (or completed)
+    // Default -> 'completed'
+    let status = 'completed';
+    if (actionType === 'will_pay_soon') {
+      status = 'will_pay_soon';
+    } else if (proofUrl) {
+      status = 'paid_pending_approval';
+    }
 
     const settlement = await Settlement.create({
       groupId,
       payer: payerId,
       receiver: receiverId,
       amount: numAmount,
-      otpHash,
-      expiresAt,
-      failedAttempts: 0,
-      status: 'verification_pending'
+      status,
+      proofUrl: proofUrl || null,
+      proofPublicId: proofPublicId || null,
+      note: note || '',
+      paidAt: new Date(),
+      verifiedAt: status === 'completed' ? new Date() : undefined
     });
 
     const populated = await Settlement.findById(settlement._id)
-      .populate('payer', 'fullName email phone')
-      .populate('receiver', 'fullName email phone');
+      .populate('payer', 'fullName email phone upiId qrCodeUrl')
+      .populate('receiver', 'fullName email phone upiId qrCodeUrl');
+
+    // Log Activity
+    const actionMsg = status === 'will_pay_soon'
+      ? `promised to pay ₹${numAmount.toFixed(2)} to ${receiverUser.fullName} soon`
+      : status === 'paid_pending_approval'
+      ? `submitted ₹${numAmount.toFixed(2)} payment proof to ${receiverUser.fullName}`
+      : `settled ₹${numAmount.toFixed(2)} with ${receiverUser.fullName}`;
+
+    await Activity.create({
+      groupId,
+      user: req.user._id,
+      action: actionMsg
+    });
 
     // --- Socket.IO + Push Notification to RECEIVER ---
+    const notifTitle = status === 'will_pay_soon'
+      ? 'Payment Promise'
+      : status === 'paid_pending_approval'
+      ? 'Payment Proof Submitted'
+      : 'Payment Settled!';
+
+    const notifMsg = status === 'will_pay_soon'
+      ? `${req.user.fullName} says they will pay ₹${numAmount.toFixed(2)} soon.`
+      : status === 'paid_pending_approval'
+      ? `${req.user.fullName} paid ₹${numAmount.toFixed(2)} and uploaded payment proof for your review.`
+      : `${req.user.fullName} settled ₹${numAmount.toFixed(2)} with you.`;
+
     emitToUser(receiverId, 'notification', {
       type: 'settlement:created',
       settlement: populated,
-      message: `${req.user.fullName} wants to settle ₹${numAmount.toFixed(2)} with you — verify the OTP`,
+      message: notifMsg,
       actorName: req.user.fullName,
       timestamp: new Date().toISOString(),
     });
 
     sendPushToUser(receiverId, {
-      title: 'Settlement Request',
-      body: `${req.user.fullName} wants to settle ₹${numAmount.toFixed(2)} — open app to verify OTP`,
+      title: notifTitle,
+      body: notifMsg,
       data: { type: 'settlement:created', settlementId: settlement._id.toString() },
     });
 
-    // Return the plain rawOtp to the payer ONLY once for screen display
-    return res.status(201).json({
-      settlement: populated,
-      otp: rawOtp, // Provided to Payer to show to Receiver
-      expiresAt
-    });
+    return res.status(201).json(populated);
   } catch (error) {
     console.error('Create Settlement Error:', error);
-    return res.status(500).json({ message: 'Server error initiating payment settlement' });
+    return res.status(500).json({ message: 'Server error creating settlement' });
   }
 };
 
-// @desc Verify OTP settlement (Receiver enters OTP)
-// @route POST /api/settlements/:id/verify
-const verifyOTP = async (req, res) => {
+// @desc Receiver approves payment proof
+// @route POST /api/settlements/:id/approve
+const approveSettlement = async (req, res) => {
   try {
-    const { otp } = req.body;
-    const settlementId = req.params.id;
-
-    if (!otp || otp.trim().length !== 6) {
-      return res.status(400).json({ message: 'Please enter a valid 6-digit OTP' });
-    }
-
-    const settlement = await Settlement.findById(settlementId)
+    const settlement = await Settlement.findById(req.params.id)
       .populate('payer', 'fullName email phone')
       .populate('receiver', 'fullName email phone');
 
     if (!settlement) {
-      return res.status(404).json({ message: 'Settlement request not found' });
+      return res.status(404).json({ message: 'Settlement not found' });
     }
 
-    // Guard: Only designated receiver can verify payment
     if (settlement.receiver._id.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Only the receiver can verify this payment OTP' });
+      return res.status(403).json({ message: 'Only the payment receiver can approve this settlement' });
     }
 
-    if (settlement.status !== 'verification_pending') {
-      return res.status(400).json({ message: `Settlement is already ${settlement.status}` });
-    }
-
-    // Check expiration (2 mins)
-    if (new Date() > new Date(settlement.expiresAt)) {
-      settlement.status = 'expired';
-      await settlement.save();
-      return res.status(400).json({ message: 'OTP Expired. Please ask payer to generate a new OTP.' });
-    }
-
-    // Check failed attempt limit (max 3)
-    if (settlement.failedAttempts >= 3) {
-      settlement.status = 'expired';
-      await settlement.save();
-      return res.status(400).json({ message: 'Maximum failed attempts exceeded (3/3). OTP expired.' });
-    }
-
-    // Compare entered OTP with stored bcrypt hash
-    const isMatch = await bcrypt.compare(otp.trim(), settlement.otpHash);
-
-    if (!isMatch) {
-      settlement.failedAttempts += 1;
-      if (settlement.failedAttempts >= 3) {
-        settlement.status = 'expired';
-        await settlement.save();
-        return res.status(400).json({ message: 'Invalid OTP. Maximum 3 attempts exceeded. OTP expired.' });
-      }
-      await settlement.save();
-      return res.status(400).json({
-        message: `Invalid OTP. (${settlement.failedAttempts}/3 attempts used)`
-      });
-    }
-
-    // Successful OTP verification
     settlement.status = 'completed';
     settlement.verifiedAt = new Date();
     await settlement.save();
@@ -166,36 +137,98 @@ const verifyOTP = async (req, res) => {
     await Activity.create({
       groupId: settlement.groupId,
       user: req.user._id,
-      action: `verified ₹${settlement.amount} payment from ${settlement.payer.fullName}`
+      action: `approved ₹${settlement.amount.toFixed(2)} payment proof from ${settlement.payer.fullName}`
     });
 
-    // --- Socket.IO + Push Notification to PAYER ---
+    // Notify Payer
     const payerId = settlement.payer._id.toString();
     emitToUser(payerId, 'notification', {
-      type: 'settlement:verified',
+      type: 'settlement:approved',
       settlement,
-      message: `${req.user.fullName} verified your ₹${settlement.amount.toFixed(2)} payment — Settlement complete!`,
+      message: `${req.user.fullName} approved your ₹${settlement.amount.toFixed(2)} payment proof! Settlement complete.`,
       actorName: req.user.fullName,
       timestamp: new Date().toISOString(),
     });
 
     sendPushToUser(payerId, {
-      title: 'Payment Verified!',
-      body: `${req.user.fullName} confirmed your ₹${settlement.amount.toFixed(2)} settlement`,
-      data: { type: 'settlement:verified', settlementId: settlement._id.toString() },
+      title: 'Payment Proof Approved!',
+      body: `${req.user.fullName} verified your ₹${settlement.amount.toFixed(2)} payment settlement`,
+      data: { type: 'settlement:approved', settlementId: settlement._id.toString() },
     });
 
-    return res.json({
-      message: 'Payment verified and settlement completed successfully!',
-      settlement
-    });
+    return res.json({ message: 'Settlement payment proof approved successfully', settlement });
   } catch (error) {
-    console.error('Verify OTP Error:', error);
-    return res.status(500).json({ message: 'Server error verifying settlement OTP' });
+    console.error('Approve Settlement Error:', error);
+    return res.status(500).json({ message: 'Server error approving settlement' });
   }
 };
 
-// @desc Cancel pending settlement
+// @desc Receiver rejects payment proof
+// @route POST /api/settlements/:id/reject
+const rejectSettlement = async (req, res) => {
+  try {
+    const settlement = await Settlement.findById(req.params.id)
+      .populate('payer', 'fullName email phone')
+      .populate('receiver', 'fullName email phone');
+
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    if (settlement.receiver._id.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the payment receiver can reject this settlement' });
+    }
+
+    settlement.status = 'rejected';
+    await settlement.save();
+
+    // Notify Payer
+    const payerId = settlement.payer._id.toString();
+    emitToUser(payerId, 'notification', {
+      type: 'settlement:rejected',
+      settlement,
+      message: `${req.user.fullName} rejected the ₹${settlement.amount.toFixed(2)} payment proof. Please verify details.`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    });
+
+    return res.json({ message: 'Settlement rejected', settlement });
+  } catch (error) {
+    console.error('Reject Settlement Error:', error);
+    return res.status(500).json({ message: 'Server error rejecting settlement' });
+  }
+};
+
+// @desc Delete payment proof from Cloudinary
+// @route DELETE /api/settlements/:id/proof
+const deleteSettlementProof = async (req, res) => {
+  try {
+    const settlement = await Settlement.findById(req.params.id);
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    const userIdStr = req.user._id.toString();
+    if (settlement.payer.toString() !== userIdStr && settlement.receiver.toString() !== userIdStr) {
+      return res.status(403).json({ message: 'Not authorized to delete proof for this settlement' });
+    }
+
+    if (settlement.proofPublicId) {
+      await deleteFromCloudinary(settlement.proofPublicId);
+    }
+
+    settlement.proofUrl = null;
+    settlement.proofPublicId = null;
+    await settlement.save();
+
+    return res.json({ message: 'Payment proof deleted successfully from Cloudinary', settlement });
+  } catch (error) {
+    console.error('Delete Proof Error:', error);
+    return res.status(500).json({ message: 'Server error deleting settlement proof' });
+  }
+};
+
+// @desc Cancel settlement
 // @route POST /api/settlements/:id/cancel
 const cancelSettlement = async (req, res) => {
   try {
@@ -204,7 +237,8 @@ const cancelSettlement = async (req, res) => {
       return res.status(404).json({ message: 'Settlement request not found' });
     }
 
-    if (settlement.payer.toString() !== req.user._id.toString() && settlement.receiver.toString() !== req.user._id.toString()) {
+    const userIdStr = req.user._id.toString();
+    if (settlement.payer.toString() !== userIdStr && settlement.receiver.toString() !== userIdStr) {
       return res.status(403).json({ message: 'Not authorized to cancel this settlement' });
     }
 
@@ -227,10 +261,14 @@ const getSettlements = async (req, res) => {
       return res.status(400).json({ message: 'You are not part of any group.' });
     }
 
+    // Automatically migrate legacy OTP statuses in DB to modern statuses
+    await Settlement.updateMany({ status: 'verification_pending' }, { status: 'paid_pending_approval' });
+    await Settlement.updateMany({ status: 'expired' }, { status: 'cancelled' });
+
     const settlements = await Settlement.find({ groupId: membership.groupId })
       .sort({ createdAt: -1 })
-      .populate('payer', 'fullName email phone')
-      .populate('receiver', 'fullName email phone');
+      .populate('payer', 'fullName email phone upiId qrCodeUrl')
+      .populate('receiver', 'fullName email phone upiId qrCodeUrl');
 
     return res.json(settlements);
   } catch (error) {
@@ -241,7 +279,9 @@ const getSettlements = async (req, res) => {
 
 module.exports = {
   createSettlement,
-  verifyOTP,
+  approveSettlement,
+  rejectSettlement,
+  deleteSettlementProof,
   cancelSettlement,
   getSettlements
 };

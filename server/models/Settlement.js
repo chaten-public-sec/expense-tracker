@@ -21,22 +21,26 @@ const settlementSchema = new mongoose.Schema({
     required: true,
     min: [0.01, 'Settlement amount must be greater than 0']
   },
-  otpHash: {
-    type: String,
-    required: true
-  },
-  expiresAt: {
-    type: Date,
-    required: true
-  },
-  failedAttempts: {
-    type: Number,
-    default: 0
-  },
   status: {
     type: String,
-    enum: ['verification_pending', 'completed', 'cancelled', 'expired'],
-    default: 'verification_pending'
+    enum: ['completed', 'paid_pending_approval', 'will_pay_soon', 'rejected', 'cancelled'],
+    default: 'completed'
+  },
+  proofUrl: {
+    type: String,
+    default: null
+  },
+  proofPublicId: {
+    type: String,
+    default: null
+  },
+  note: {
+    type: String,
+    default: ''
+  },
+  paidAt: {
+    type: Date,
+    default: Date.now
   },
   verifiedAt: {
     type: Date
