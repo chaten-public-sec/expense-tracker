@@ -176,10 +176,13 @@ const startServer = async () => {
   // Initialize Socket.IO on the HTTP server
   socketManager.init(httpServer, corsOptions);
 
+const { startKeepAlive } = require('./utils/keepAlive');
+
   httpServer.listen(PORT, () => {
     console.log(`🚀 [Express] Server running on port ${PORT} [Mode: ${process.env.NODE_ENV || 'development'}]`);
     console.log(`🌐 [CORS] Allowed Origins: ${isDev ? 'Development' : allowedOrigins.join(', ')}`);
     console.log(`🔌 [Socket.IO] WebSocket server ready on port ${PORT}`);
+    startKeepAlive();
   });
 
   // Graceful shutdown handling for Render / Docker containers
