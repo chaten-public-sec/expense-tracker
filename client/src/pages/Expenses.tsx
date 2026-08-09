@@ -1,25 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Card,
+  Input,
+  Select,
+  Segmented,
+  Button,
+  Tag,
+  Typography,
+  Space,
+  Empty,
+  Spin,
+  Pagination,
+  Flex,
+} from 'antd';
+import {
+  PlusOutlined,
+  SearchOutlined,
+  DollarOutlined,
+  CalendarOutlined,
+  DollarCircleOutlined,
+  MobileOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../components/ui/Toast';
-import { Card } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
-import { Skeleton } from '../components/ui/Skeleton';
 import { Expense, GroupMember } from '../types';
-import { Plus, Search, Receipt } from 'lucide-react';
 import api from '../services/api';
 
 import { AddExpenseModal } from '../components/modals/AddExpenseModal';
 import { ExpenseDetailModal } from '../components/modals/ExpenseDetailModal';
 import { EditExpenseModal } from '../components/modals/EditExpenseModal';
 
+const { Title, Text } = Typography;
+
 export const Expenses: React.FC = () => {
-  const { showToast } = useToast();
+  const { showError } = useToast();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterMode, setFilterMode] = useState<'all' | 'cash' | 'upi'>('all');
+  const [filterMode, setFilterMode] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('newest');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 8;
 
   // Modals
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -36,7 +59,7 @@ export const Expenses: React.FC = () => {
       setMembers(groupRes.data.members || []);
     } catch (err: any) {
       console.error('Fetch Expenses Error:', err);
-      showToast('Failed to load expense history', 'error');
+      showError('Failed to load expenses');
     } finally {
       setIsLoading(false);
     }
@@ -50,118 +73,187 @@ export const Expenses: React.FC = () => {
     return new Date(dateStr).toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',
-      year: 'numeric'
     });
   };
 
-  const filteredExpenses = expenses.filter((exp) => {
-    const matchesSearch = exp.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          exp.paidBy?.fullName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterMode === 'all' || exp.paymentMode === filterMode;
-    return matchesSearch && matchesFilter;
-  });
+  const processedExpenses = useMemo(() => {
+    let list = expenses.filter((exp) => {
+      const query = searchTerm.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        exp.title.toLowerCase().includes(query) ||
+        exp.paidBy?.fullName.toLowerCase().includes(query) ||
+        (exp.notes && exp.notes.toLowerCase().includes(query));
+      const matchesFilter = filterMode === 'all' || exp.paymentMode === filterMode;
+      return matchesSearch && matchesFilter;
+    });
+
+    list.sort((a, b) => {
+      if (sortBy === 'newest') return new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (sortBy === 'oldest') return new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (sortBy === 'highest') return b.amount - a.amount;
+      if (sortBy === 'lowest') return a.amount - b.amount;
+      return 0;
+    });
+
+    return list;
+  }, [expenses, searchTerm, filterMode, sortBy]);
+
+  const totalExpenseSum = useMemo(() => {
+    return processedExpenses.reduce((acc, curr) => acc + curr.amount, 0);
+  }, [processedExpenses]);
+
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return processedExpenses.slice(start, start + pageSize);
+  }, [processedExpenses, currentPage]);
 
   return (
-    <div className="max-w-md mx-auto p-4 space-y-4 pb-24 animate-fade-in">
-      {/* Header & Add Expense */}
-      <div className="flex items-center justify-between pt-1">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Top Controls Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Expense History</h2>
-          <p className="text-xs text-zinc-500 font-medium">All recorded group expenses</p>
+          <Title level={4} style={{ margin: 0, fontSize: 18 }}>
+            Expenses ({expenses.length})
+          </Title>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Total: ₹{totalExpenseSum.toFixed(2)}
+          </Text>
         </div>
         <Button
-          variant="primary"
-          size="sm"
+          type="primary"
+          icon={<PlusOutlined />}
           onClick={() => setIsAddExpenseOpen(true)}
+          style={{ borderRadius: 10 }}
         >
-          <Plus className="w-4 h-4 mr-1" /> Add Expense
+          Add Expense
         </Button>
       </div>
 
-      {/* Search & Filter bar */}
-      <div className="space-y-2">
-        <Input
-          placeholder="Search by title or member name..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          icon={<Search className="w-4 h-4" />}
-        />
+      {/* Filter and Search Bar */}
+      <Card style={{ borderRadius: 14 }} styles={{ body: { padding: 12 } }}>
+        <Flex vertical gap={8}>
+          <Input
+            placeholder="Search bills, flatmate or notes..."
+            prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            allowClear
+            size="middle"
+          />
 
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          <span className="text-[11px] font-bold text-zinc-400 uppercase mr-1">Filter:</span>
-          <button
-            onClick={() => setFilterMode('all')}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-              filterMode === 'all'
-                ? 'bg-black text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            All ({expenses.length})
-          </button>
-          <button
-            onClick={() => setFilterMode('cash')}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-              filterMode === 'cash'
-                ? 'bg-black text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            Cash
-          </button>
-          <button
-            onClick={() => setFilterMode('upi')}
-            className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
-              filterMode === 'upi'
-                ? 'bg-black text-white'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'
-            }`}
-          >
-            UPI
-          </button>
-        </div>
-      </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Segmented
+              value={filterMode}
+              onChange={(val) => {
+                setFilterMode(val as string);
+                setCurrentPage(1);
+              }}
+              options={[
+                { label: 'All', value: 'all' },
+                { label: 'Cash', value: 'cash' },
+                { label: 'UPI', value: 'upi' },
+              ]}
+              style={{ flex: 1 }}
+              size="middle"
+            />
 
-      {/* Expenses List */}
+            <Select
+              value={sortBy}
+              onChange={(val) => setSortBy(val)}
+              style={{ width: 130 }}
+              size="middle"
+              options={[
+                { label: 'Newest', value: 'newest' },
+                { label: 'Oldest', value: 'oldest' },
+                { label: 'Highest', value: 'highest' },
+                { label: 'Lowest', value: 'lowest' },
+              ]}
+            />
+          </div>
+        </Flex>
+      </Card>
+
+      {/* Expense Items List */}
       {isLoading ? (
-        <div className="space-y-2.5">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div style={{ textAlign: 'center', padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <Spin size="large" />
+          <Text type="secondary" style={{ fontSize: 13 }}>Loading expenses...</Text>
         </div>
-      ) : filteredExpenses.length > 0 ? (
-        <div className="space-y-2.5">
-          {filteredExpenses.map((exp) => (
-            <Card
-              key={exp._id}
-              hoverable
-              onClick={() => setSelectedExpense(exp)}
-              className="p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-zinc-100 flex items-center justify-center text-zinc-800 font-bold">
-                  <Receipt className="w-5 h-5" />
+      ) : processedExpenses.length > 0 ? (
+        <Card style={{ borderRadius: 14 }} styles={{ body: { padding: 0 } }}>
+          <Flex vertical>
+            {paginatedExpenses.map((exp, idx) => (
+              <div
+                key={exp._id || idx}
+                style={{
+                  padding: '12px 14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  borderBottom: idx !== paginatedExpenses.length - 1 ? '1px solid #f8fafc' : 'none',
+                  background: idx % 2 === 0 ? '#ffffff' : '#fafafa',
+                  transition: 'background 0.15s',
+                }}
+                onClick={() => setSelectedExpense(exp)}
+              >
+                <div style={{ minWidth: 0, paddingRight: 8 }}>
+                  <Text strong style={{ fontSize: 14, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {exp.title}
+                  </Text>
+                  <Space size={4} style={{ fontSize: 11 }}>
+                    <Text type="secondary">By {exp.paidBy?.fullName?.split(' ')[0]}</Text>
+                    <Text type="secondary">•</Text>
+                    <Text type="secondary">{formatDate(exp.date || exp.createdAt || '')}</Text>
+                    <Tag
+                      color={exp.paymentMode === 'upi' ? 'blue' : 'default'}
+                      icon={exp.paymentMode === 'upi' ? <MobileOutlined /> : <DollarCircleOutlined />}
+                      style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}
+                    >
+                      {exp.paymentMode === 'upi' ? 'UPI' : 'Cash'}
+                    </Tag>
+                  </Space>
                 </div>
-                <div>
-                  <h4 className="text-sm font-bold text-zinc-900">{exp.title}</h4>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    Paid by <span className="font-semibold text-zinc-800">{exp.paidBy?.fullName?.split(' ')[0]}</span> • {formatDate(exp.date)}
-                  </p>
+
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <Text strong style={{ fontSize: 15, color: '#1677ff', display: 'block' }}>
+                    ₹{exp.amount.toFixed(2)}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 10 }}>
+                    {exp.splitDetails?.length || 1} split
+                  </Text>
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-base font-bold text-zinc-900">₹{exp.amount}</span>
-                <span className="text-[10px] text-zinc-400 font-semibold block uppercase">
-                  {exp.paymentMode}
-                </span>
-              </div>
-            </Card>
-          ))}
-        </div>
+            ))}
+          </Flex>
+
+          {processedExpenses.length > pageSize && (
+            <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'center', borderTop: '1px solid #f0f0f0' }}>
+              <Pagination
+                current={currentPage}
+                pageSize={pageSize}
+                total={processedExpenses.length}
+                onChange={(p) => setCurrentPage(p)}
+                showSizeChanger={false}
+                size="small"
+              />
+            </div>
+          )}
+        </Card>
       ) : (
-        <Card className="p-10 text-center text-zinc-400 text-xs font-medium space-y-2">
-          <Receipt className="w-10 h-10 mx-auto text-zinc-300" />
-          <p>No matching expenses found.</p>
+        <Card style={{ borderRadius: 14, textAlign: 'center', padding: '32px 0' }}>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No matching expenses found."
+          >
+            <Button type="primary" onClick={() => setIsAddExpenseOpen(true)}>
+              Add First Expense
+            </Button>
+          </Empty>
         </Card>
       )}
 

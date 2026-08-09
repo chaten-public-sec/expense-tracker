@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-// Ensure base URL always includes the required '/api' path suffix regardless of how VITE_API_URL is configured
+// Ensure base URL dynamically reads import.meta.env.VITE_API_URL and formats /api path cleanly
 const getBaseUrl = (): string => {
   const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
   if (!envUrl) return '/api';
@@ -11,6 +11,7 @@ const API_BASE_URL = getBaseUrl();
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }

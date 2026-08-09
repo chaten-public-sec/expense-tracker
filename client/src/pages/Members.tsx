@@ -1,22 +1,38 @@
 import React, { useState, useEffect } from 'react';
+import {
+  Card,
+  Avatar,
+  Tag,
+  Typography,
+  Space,
+  Empty,
+  Spin,
+  Flex,
+} from 'antd';
+import {
+  CrownOutlined,
+  RightOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../components/ui/Toast';
-import { Card } from '../components/ui/Card';
-import { Avatar } from '../components/ui/Avatar';
-import { Badge } from '../components/ui/Badge';
-import { Skeleton } from '../components/ui/Skeleton';
-import { GroupMember } from '../types';
-import { Users, ChevronRight, Crown } from 'lucide-react';
+import { GroupMember, OwedPerson } from '../types';
 import api from '../services/api';
 
 import { MemberDetailModal } from '../components/modals/MemberDetailModal';
+import { SettlementModal } from '../components/modals/SettlementModal';
+
+const { Title, Text } = Typography;
 
 export const Members: React.FC = () => {
-  const { showToast } = useToast();
+  const { showError } = useToast();
 
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [groupName, setGroupName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMember, setSelectedMember] = useState<GroupMember | null>(null);
+
+  // Settlement trigger
+  const [settlementTarget, setSettlementTarget] = useState<OwedPerson | null>(null);
 
   const fetchMembers = async () => {
     try {
@@ -26,7 +42,7 @@ export const Members: React.FC = () => {
       setGroupName(res.data.group?.name || '');
     } catch (err: any) {
       console.error('Fetch Members Error:', err);
-      showToast('Failed to load group members', 'error');
+      showError('Failed to load group members');
     } finally {
       setIsLoading(false);
     }
@@ -37,60 +53,122 @@ export const Members: React.FC = () => {
   }, []);
 
   return (
-    <div className="max-w-md mx-auto p-4 space-y-4 pb-24 animate-fade-in">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Header */}
-      <div className="pt-1">
-        <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Group Members</h2>
-        <p className="text-xs text-zinc-500 font-medium">
-          Flatmates in <span className="font-bold text-zinc-800">{groupName}</span> ({members.length})
-        </p>
+      <div>
+        <Title level={4} style={{ margin: 0, fontSize: 18 }}>
+          Group Members ({members.length})
+        </Title>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {groupName || 'Flatmates in group'}
+        </Text>
       </div>
 
       {/* Members List */}
       {isLoading ? (
-        <div className="space-y-2.5">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div style={{ textAlign: 'center', padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <Spin size="large" />
+          <Text type="secondary">Loading members...</Text>
         </div>
       ) : members.length > 0 ? (
-        <div className="space-y-2.5">
-          {members.map((m) => (
-            <Card
-              key={m._id}
-              hoverable
-              onClick={() => setSelectedMember(m)}
-              className="p-4 flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar name={m.fullName} size="md" />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="text-sm font-bold text-zinc-900">{m.fullName}</h4>
-                    {m.role === 'creator' && (
-                      <span title="Group Creator"><Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /></span>
-                    )}
-                  </div>
-                  <p className="text-xs text-zinc-500 font-medium">{m.phone || m.email}</p>
-                </div>
-              </div>
+        <Flex vertical gap={10}>
+          {members.map((m) => {
+            const netBalance = (m.totalReceives || 0) - (m.totalOwes || 0);
 
-              <div className="flex items-center gap-3">
-                <div className="text-right">
-                  <span className="text-xs font-bold text-zinc-900 block">₹{m.totalPaid} paid</span>
-                  <span className="text-[10px] text-zinc-400 block font-medium">
-                    Owes ₹{m.totalOwes}
-                  </span>
+            return (
+              <Card
+                key={m._id}
+                hoverable
+                onClick={() => setSelectedMember(m)}
+                style={{
+                  borderRadius: 14,
+                  cursor: 'pointer',
+                }}
+                styles={{ body: { padding: 14 } }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <Space align="center" size={10}>
+                    <Avatar
+                      size={40}
+                      style={{
+                        backgroundColor: m.role === 'creator' ? '#0f172a' : '#1677ff',
+                        fontSize: 15,
+                        fontWeight: 600,
+                      }}
+                      icon={<UserOutlined />}
+                    >
+                      {m.fullName?.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <div>
+                      <Text strong style={{ fontSize: 14, display: 'block' }}>
+                        {m.fullName}
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {m.phone || m.email}
+                      </Text>
+                    </div>
+                  </Space>
+
+                  <Tag
+                    color={m.role === 'creator' ? 'gold' : 'default'}
+                    icon={m.role === 'creator' ? <CrownOutlined /> : undefined}
+                    style={{ margin: 0, fontSize: 10 }}
+                  >
+                    {m.role === 'creator' ? 'Owner' : 'Member'}
+                  </Tag>
                 </div>
-                <ChevronRight className="w-4 h-4 text-zinc-400" />
-              </div>
-            </Card>
-          ))}
-        </div>
+
+                {/* Net metrics chip */}
+                <div
+                  style={{
+                    padding: '8px 10px',
+                    background: '#f8fafc',
+                    borderRadius: 8,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: 12,
+                  }}
+                >
+                  <Space size={12}>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Paid</Text>
+                      <Text strong style={{ fontSize: 12 }}>₹{m.totalPaid || 0}</Text>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Owes</Text>
+                      <Text strong style={{ fontSize: 12, color: '#ef4444' }}>₹{m.totalOwes || 0}</Text>
+                    </div>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Receives</Text>
+                      <Text strong style={{ fontSize: 12, color: '#10b981' }}>₹{m.totalReceives || 0}</Text>
+                    </div>
+                  </Space>
+
+                  <div style={{ textAlign: 'right' }}>
+                    <Text type="secondary" style={{ fontSize: 10, display: 'block' }}>Net Balance</Text>
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 13,
+                        color: netBalance > 0 ? '#10b981' : netBalance < 0 ? '#ef4444' : '#6b7280',
+                      }}
+                    >
+                      {netBalance > 0
+                        ? `+₹${netBalance.toFixed(2)}`
+                        : netBalance < 0
+                        ? `-₹${Math.abs(netBalance).toFixed(2)}`
+                        : '₹0.00'}
+                    </Text>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </Flex>
       ) : (
-        <Card className="p-8 text-center text-zinc-400 text-xs font-medium">
-          <Users className="w-8 h-8 mx-auto text-zinc-300 mb-2" />
-          No members found in this group.
+        <Card style={{ borderRadius: 14, textAlign: 'center', padding: '32px 0' }}>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No members in this group." />
         </Card>
       )}
 
@@ -99,6 +177,13 @@ export const Members: React.FC = () => {
         isOpen={!!selectedMember}
         onClose={() => setSelectedMember(null)}
         member={selectedMember}
+      />
+
+      <SettlementModal
+        isOpen={!!settlementTarget}
+        onClose={() => setSettlementTarget(null)}
+        targetPerson={settlementTarget}
+        onSettlementUpdated={fetchMembers}
       />
     </div>
   );

@@ -3,36 +3,84 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    background-color: #FFFFFF;
-    color: #111827;
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  * {
+    box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100%;
+    background-color: #f8fafc;
+    color: #1f2937;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+    touch-action: manipulation;
   }
 }
 
-/* Custom scrollbar styling */
+/* Mobile App Viewport & Inset Utilities */
+.mobile-app-container {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  position: relative;
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
+}
+
+@media (max-width: 640px) {
+  .mobile-app-container {
+    max-width: 100%;
+    box-shadow: none;
+  }
+}
+
+/* Ant Design Mobile Adaptations */
+.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
+.ant-btn:active {
+  transform: scale(0.98);
+  transition: transform 0.1s ease;
+}
+
+.ant-card {
+  border-radius: 14px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid #f0f0f0 !important;
+}
+
+.ant-modal .ant-modal-content {
+  border-radius: 16px !important;
+  padding: 20px !important;
+}
+
+@media (max-width: 640px) {
+  .ant-modal {
+    max-width: calc(100vw - 24px) !important;
+    margin: 12px auto !important;
+  }
+}
+
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 ::-webkit-scrollbar-track {
-  background: #F9FAFB;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
-}
-
-/* Smooth modal animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-.animate-fade-in {
-  animation: fadeIn 0.15s ease-out forwards;
+  background: #d1d5db;
+  border-radius: 4px;
 }

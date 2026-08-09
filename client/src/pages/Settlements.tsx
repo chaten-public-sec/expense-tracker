@@ -1,14 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import {
+  Card,
+  Tag,
+  Typography,
+  Space,
+  Empty,
+  Spin,
+  Flex,
+} from 'antd';
+import {
+  SafetyCertificateOutlined,
+  ArrowRightOutlined,
+  ClockCircleOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  ExclamationCircleOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../components/ui/Toast';
-import { Card } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
-import { Skeleton } from '../components/ui/Skeleton';
 import { Settlement } from '../types';
-import { ShieldCheck, ArrowRight, Clock, AlertTriangle } from 'lucide-react';
 import api from '../services/api';
 
+const { Title, Text } = Typography;
+
 export const Settlements: React.FC = () => {
-  const { showToast } = useToast();
+  const { showError } = useToast();
 
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +35,7 @@ export const Settlements: React.FC = () => {
       setSettlements(res.data || []);
     } catch (err: any) {
       console.error('Fetch Settlements Error:', err);
-      showToast('Failed to load settlement history', 'error');
+      showError('Failed to load settlement history');
     } finally {
       setIsLoading(false);
     }
@@ -34,76 +49,92 @@ export const Settlements: React.FC = () => {
     return new Date(dateStr).toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',
-      year: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
+  const getStatusTag = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return (
+          <Tag color="success" icon={<CheckCircleOutlined />} style={{ margin: 0, fontSize: 10 }}>
+            Verified
+          </Tag>
+        );
+      case 'verification_pending':
+        return (
+          <Tag color="warning" icon={<ClockCircleOutlined />} style={{ margin: 0, fontSize: 10 }}>
+            Pending OTP
+          </Tag>
+        );
+      case 'expired':
+        return (
+          <Tag color="default" icon={<ExclamationCircleOutlined />} style={{ margin: 0, fontSize: 10 }}>
+            Expired
+          </Tag>
+        );
+      case 'cancelled':
+        return (
+          <Tag color="error" icon={<CloseCircleOutlined />} style={{ margin: 0, fontSize: 10 }}>
+            Cancelled
+          </Tag>
+        );
+      default:
+        return <Tag style={{ margin: 0 }}>{status}</Tag>;
+    }
+  };
+
   return (
-    <div className="max-w-md mx-auto p-4 space-y-4 pb-24 animate-fade-in">
-      {/* Header */}
-      <div className="pt-1">
-        <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Settlement History</h2>
-        <p className="text-xs text-zinc-500 font-medium">OTP verified payment records</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <Title level={4} style={{ margin: 0, fontSize: 18 }}>
+          Settlements ({settlements.length})
+        </Title>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          OTP-verified dues payment records
+        </Text>
       </div>
 
-      {/* Settlements List */}
       {isLoading ? (
-        <div className="space-y-2.5">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div style={{ textAlign: 'center', padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <Spin size="large" />
+          <Text type="secondary">Loading settlement records...</Text>
         </div>
       ) : settlements.length > 0 ? (
-        <div className="space-y-2.5">
+        <Flex vertical gap={10}>
           {settlements.map((s) => (
-            <Card key={s._id} className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-semibold text-zinc-900">
-                  <span>{s.payer?.fullName}</span>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>{s.receiver?.fullName}</span>
-                </div>
-                <span className="text-base font-extrabold text-zinc-900">₹{s.amount}</span>
+            <Card
+              key={s._id}
+              style={{ borderRadius: 14 }}
+              styles={{ body: { padding: '12px 14px' } }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Space align="center" size={6}>
+                  <Tag style={{ margin: 0, fontWeight: 600, fontSize: 11 }}>{s.payer?.fullName?.split(' ')[0]}</Tag>
+                  <ArrowRightOutlined style={{ color: '#9ca3af', fontSize: 11 }} />
+                  <Tag style={{ margin: 0, fontWeight: 600, fontSize: 11 }}>{s.receiver?.fullName?.split(' ')[0]}</Tag>
+                </Space>
+                <Text strong style={{ fontSize: 16, color: '#1677ff' }}>
+                  ₹{s.amount.toFixed(2)}
+                </Text>
               </div>
 
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-100">
-                <span className="text-[11px] text-zinc-400 font-medium">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f8fafc', paddingTop: 6 }}>
+                <Text type="secondary" style={{ fontSize: 11 }}>
                   {formatDate(s.createdAt)}
-                </span>
-
-                {s.status === 'completed' && (
-                  <Badge variant="success" className="gap-1">
-                    <ShieldCheck className="w-3 h-3" /> Verified
-                  </Badge>
-                )}
-
-                {s.status === 'verification_pending' && (
-                  <Badge variant="warning" className="gap-1">
-                    <Clock className="w-3 h-3" /> Pending OTP
-                  </Badge>
-                )}
-
-                {s.status === 'expired' && (
-                  <Badge variant="danger" className="gap-1">
-                    <AlertTriangle className="w-3 h-3" /> Expired
-                  </Badge>
-                )}
-
-                {s.status === 'cancelled' && (
-                  <Badge variant="outline">
-                    Cancelled
-                  </Badge>
-                )}
+                </Text>
+                {getStatusTag(s.status)}
               </div>
             </Card>
           ))}
-        </div>
+        </Flex>
       ) : (
-        <Card className="p-8 text-center text-zinc-400 text-xs font-medium space-y-2">
-          <ShieldCheck className="w-8 h-8 mx-auto text-zinc-300" />
-          <p>No payment settlements recorded yet.</p>
+        <Card style={{ borderRadius: 14, textAlign: 'center', padding: '32px 0' }}>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No settlements recorded yet."
+          />
         </Card>
       )}
     </div>

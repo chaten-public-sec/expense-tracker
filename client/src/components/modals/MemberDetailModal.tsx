@@ -1,9 +1,15 @@
 import React from 'react';
-import { Modal } from '../ui/Modal';
-import { Avatar } from '../ui/Avatar';
-import { Badge } from '../ui/Badge';
+import { Modal, Avatar, Tag, Typography, Statistic, Row, Col, Card, Space, Divider, Button } from 'antd';
+import {
+  UserOutlined,
+  MailOutlined,
+  PhoneOutlined,
+  CalendarOutlined,
+  CrownOutlined,
+} from '@ant-design/icons';
 import { GroupMember } from '../../types';
-import { Mail, Phone, Calendar } from 'lucide-react';
+
+const { Title, Text } = Typography;
 
 interface MemberDetailModalProps {
   isOpen: boolean;
@@ -14,7 +20,7 @@ interface MemberDetailModalProps {
 export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
   isOpen,
   onClose,
-  member
+  member,
 }) => {
   if (!member) return null;
 
@@ -22,60 +28,109 @@ export const MemberDetailModal: React.FC<MemberDetailModalProps> = ({
     if (!dateStr) return 'Recently';
     return new Date(dateStr).toLocaleDateString('en-IN', {
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
     });
   };
 
   return (
     <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Member Profile"
-      maxWidth="sm"
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <Space align="center">
+          <UserOutlined style={{ color: '#1677ff' }} />
+          <span>Member Profile</span>
+        </Space>
+      }
+      footer={[
+        <Button key="close" type="primary" onClick={onClose}>
+          Close
+        </Button>,
+      ]}
+      width={440}
     >
-      <div className="space-y-5 py-2 text-center">
-        {/* Header Avatar & Name */}
-        <div className="flex flex-col items-center space-y-2">
-          <Avatar name={member.fullName} size="xl" />
-          <h3 className="text-lg font-bold text-zinc-900 tracking-tight">{member.fullName}</h3>
-          <Badge variant={member.role === 'creator' ? 'default' : 'outline'} className="capitalize">
-            {member.role}
-          </Badge>
+      <div style={{ textAlign: 'center', padding: '12px 0' }}>
+        {/* Avatar & Name */}
+        <Avatar
+          size={64}
+          icon={<UserOutlined />}
+          style={{
+            backgroundColor: '#1677ff',
+            fontSize: 24,
+            fontWeight: 600,
+            marginBottom: 12,
+          }}
+        >
+          {member.fullName?.charAt(0).toUpperCase()}
+        </Avatar>
+
+        <Title level={4} style={{ margin: 0 }}>
+          {member.fullName}
+        </Title>
+
+        <div style={{ marginTop: 6, marginBottom: 16 }}>
+          <Tag color={member.role === 'creator' ? 'gold' : 'blue'} icon={member.role === 'creator' ? <CrownOutlined /> : undefined}>
+            {member.role === 'creator' ? 'Group Creator / Admin' : 'Member'}
+          </Tag>
         </div>
 
         {/* Contact Info */}
-        <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2 text-left text-xs">
-          <div className="flex items-center gap-2 text-zinc-600">
-            <Mail className="w-4 h-4 text-zinc-400" />
-            <span>{member.email}</span>
-          </div>
-          <div className="flex items-center gap-2 text-zinc-600">
-            <Phone className="w-4 h-4 text-zinc-400" />
-            <span>{member.phone}</span>
-          </div>
-          <div className="flex items-center gap-2 text-zinc-400 text-[11px] pt-1 border-t border-zinc-200/60">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>Joined {formatDate(member.joinedAt)}</span>
-          </div>
-        </div>
+        <Card size="small" style={{ background: '#fafafa', borderRadius: 8, textAlign: 'left', marginBottom: 16 }}>
+          <Space style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 8 }}>
+            <Space>
+              <MailOutlined style={{ color: '#8c8c8c' }} />
+              <Text style={{ fontSize: 13 }}>{member.email}</Text>
+            </Space>
+            <Space>
+              <PhoneOutlined style={{ color: '#8c8c8c' }} />
+              <Text style={{ fontSize: 13 }}>{member.phone || 'No phone number'}</Text>
+            </Space>
+            <Divider style={{ margin: '6px 0' }} />
+            <Space>
+              <CalendarOutlined style={{ color: '#8c8c8c' }} />
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Joined {formatDate(member.joinedAt)}
+              </Text>
+            </Space>
+          </Space>
+        </Card>
 
-        {/* Financial Metrics Cards */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="p-3 bg-white border border-zinc-200 rounded-xl text-center">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Total Paid</span>
-            <span className="text-sm font-bold text-zinc-900 mt-1 block">₹{member.totalPaid}</span>
-          </div>
-
-          <div className="p-3 bg-white border border-zinc-200 rounded-xl text-center">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Total Owes</span>
-            <span className="text-sm font-bold text-zinc-900 mt-1 block">₹{member.totalOwes}</span>
-          </div>
-
-          <div className="p-3 bg-white border border-zinc-200 rounded-xl text-center">
-            <span className="text-[10px] uppercase font-bold text-zinc-400 block">Receives</span>
-            <span className="text-sm font-bold text-zinc-900 mt-1 block">₹{member.totalReceives}</span>
-          </div>
-        </div>
+        {/* Financial Metrics */}
+        <Row gutter={8}>
+          <Col span={8}>
+            <Card size="small" style={{ borderRadius: 8, textAlign: 'center' }}>
+              <Statistic
+                title={<span style={{ fontSize: 11 }}>Paid</span>}
+                value={member.totalPaid || 0}
+                precision={2}
+                prefix="₹"
+                styles={{ content: { fontSize: 14, fontWeight: 700 } }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small" style={{ borderRadius: 8, textAlign: 'center' }}>
+              <Statistic
+                title={<span style={{ fontSize: 11 }}>Owes</span>}
+                value={member.totalOwes || 0}
+                precision={2}
+                prefix="₹"
+                styles={{ content: { fontSize: 14, fontWeight: 700, color: '#ef4444' } }}
+              />
+            </Card>
+          </Col>
+          <Col span={8}>
+            <Card size="small" style={{ borderRadius: 8, textAlign: 'center' }}>
+              <Statistic
+                title={<span style={{ fontSize: 11 }}>Receives</span>}
+                value={member.totalReceives || 0}
+                precision={2}
+                prefix="₹"
+                styles={{ content: { fontSize: 14, fontWeight: 700, color: '#10b981' } }}
+              />
+            </Card>
+          </Col>
+        </Row>
       </div>
     </Modal>
   );

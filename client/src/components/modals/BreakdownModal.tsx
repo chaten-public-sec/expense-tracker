@@ -1,9 +1,9 @@
 import React from 'react';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
-import { Avatar } from '../ui/Avatar';
+import { Modal, Avatar, Button, Typography, Tag, Space, Empty, Flex } from 'antd';
+import { CheckCircleOutlined, UserOutlined } from '@ant-design/icons';
 import { OwedPerson } from '../../types';
-import { CheckCircle } from 'lucide-react';
+
+const { Text, Title } = Typography;
 
 interface BreakdownModalProps {
   isOpen: boolean;
@@ -22,53 +22,102 @@ export const BreakdownModal: React.FC<BreakdownModalProps> = ({
   type,
   totalAmount,
   peopleList,
-  onMarkAsPaid
+  onMarkAsPaid,
 }) => {
   return (
     <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={title}
-      description={`Total amount: ₹${totalAmount}`}
-      maxWidth="md"
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <div style={{ paddingRight: 24 }}>
+          <Title level={5} style={{ margin: 0 }}>
+            {title}
+          </Title>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Total amount:{' '}
+            <strong style={{ color: type === 'need_to_pay' ? '#ef4444' : '#10b981' }}>
+              ₹{totalAmount.toFixed(2)}
+            </strong>
+          </Text>
+        </div>
+      }
+      footer={[
+        <Button key="close" onClick={onClose}>
+          Close
+        </Button>,
+      ]}
+      width={480}
     >
-      <div className="space-y-4 py-1">
-        {peopleList.length === 0 ? (
-          <div className="text-center py-8 text-zinc-400 text-xs font-medium">
-            No active balances for this section.
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            {peopleList.map((item) => (
-              <div
-                key={item.user._id}
-                className="p-3.5 bg-white border border-zinc-200 rounded-xl flex items-center justify-between shadow-soft"
-              >
-                <div className="flex items-center gap-3">
-                  <Avatar name={item.user.fullName} size="md" />
-                  <div>
-                    <h4 className="text-sm font-bold text-zinc-900">{item.user.fullName}</h4>
-                    <p className="text-xs text-zinc-500">{item.user.phone || item.user.email}</p>
-                  </div>
+      {peopleList.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description="No active dues or balances in this section"
+          style={{ padding: '24px 0' }}
+        />
+      ) : (
+        <Flex vertical gap={8} style={{ padding: '4px 0' }}>
+          {peopleList.map((item) => (
+            <div
+              key={item.user._id}
+              style={{
+                padding: '12px 14px',
+                background: '#fafafa',
+                borderRadius: 8,
+                border: '1px solid #f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Space align="center" size="middle">
+                <Avatar
+                  style={{
+                    backgroundColor: type === 'need_to_pay' ? '#ef4444' : '#10b981',
+                    fontWeight: 600,
+                  }}
+                  icon={<UserOutlined />}
+                >
+                  {item.user.fullName?.charAt(0).toUpperCase()}
+                </Avatar>
+                <div>
+                  <Text strong style={{ fontSize: 13, display: 'block' }}>
+                    {item.user.fullName}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {item.user.phone || item.user.email}
+                  </Text>
                 </div>
+              </Space>
 
-                <div className="flex items-center gap-3">
-                  <span className="text-base font-bold text-zinc-900">₹{item.amount}</span>
-                  {type === 'need_to_pay' && onMarkAsPaid && (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => onMarkAsPaid(item)}
-                    >
-                      <CheckCircle className="w-3.5 h-3.5 mr-1" /> Mark as Paid
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              <Space align="center" size="middle">
+                <Text
+                  strong
+                  style={{
+                    fontSize: 15,
+                    color: type === 'need_to_pay' ? '#ef4444' : '#10b981',
+                  }}
+                >
+                  ₹{item.amount.toFixed(2)}
+                </Text>
+
+                {type === 'need_to_pay' && onMarkAsPaid && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<CheckCircleOutlined />}
+                    onClick={() => {
+                      onClose();
+                      onMarkAsPaid(item);
+                    }}
+                  >
+                    Pay
+                  </Button>
+                )}
+              </Space>
+            </div>
+          ))}
+        </Flex>
+      )}
     </Modal>
   );
 };

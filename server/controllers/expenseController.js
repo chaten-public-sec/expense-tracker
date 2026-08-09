@@ -2,6 +2,8 @@ const Expense = require('../models/Expense');
 const GroupMember = require('../models/GroupMember');
 const Activity = require('../models/Activity');
 const { uploadToCloudinary } = require('../config/cloudinary');
+const { emitToGroup, emitToUsers } = require('../socket/socketManager');
+const { sendPushToGroup, sendPushToUsers } = require('../services/pushService');
 
 // Helper to compute split details array
 const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) => {
@@ -84,6 +86,31 @@ const createExpense = async (req, res) => {
       user: req.user._id,
       action: `added "${expense.title}" ₹${expense.amount}`
     });
+
+    // --- Socket.IO + Push Notification ---
+    const notificationData = {
+      type: 'expense:created',
+      expense: populatedExpense,
+      message: `${req.user.fullName} added "${expense.title}" — ₹${numAmount.toFixed(2)}`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    };
+
+    const pushPayload = {
+      title: `New Expense: ${expense.title}`,
+      body: `${req.user.fullName} added ₹${numAmount.toFixed(2)} — ${splitType === 'everyone' ? 'Split with everyone' : 'Split with specific members'}`,
+      data: { type: 'expense:created', expenseId: expense._id.toString() },
+    };
+
+    if (splitType === 'everyone' || !splitBetween || splitBetween.length === 0) {
+      // Notify all group members except the creator
+      emitToGroup(groupId, 'notification', notificationData, req.user._id.toString());
+      sendPushToGroup(groupId, pushPayload, req.user._id.toString());
+    } else {
+      // Notify only specific split members
+      emitToUsers(finalSplitBetween, 'notification', notificationData, req.user._id.toString());
+      sendPushToUsers(finalSplitBetween, pushPayload, req.user._id.toString());
+    }
 
     return res.status(201).json(populatedExpense);
   } catch (error) {
@@ -180,6 +207,22 @@ const updateExpense = async (req, res) => {
       action: `updated expense "${expense.title}"`
     });
 
+    // --- Socket.IO + Push Notification ---
+    const notificationData = {
+      type: 'expense:updated',
+      expense: updatedExpense,
+      message: `${req.user.fullName} updated "${expense.title}" — ₹${numAmount.toFixed(2)}`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    };
+
+    emitToGroup(expense.groupId, 'notification', notificationData, req.user._id.toString());
+    sendPushToGroup(expense.groupId, {
+      title: `Expense Updated: ${expense.title}`,
+      body: `${req.user.fullName} changed the amount to ₹${numAmount.toFixed(2)}`,
+      data: { type: 'expense:updated', expenseId: expense._id.toString() },
+    }, req.user._id.toString());
+
     return res.json(updatedExpense);
   } catch (error) {
     console.error('Update Expense Error:', error);
@@ -198,6 +241,7 @@ const deleteExpense = async (req, res) => {
 
     const title = expense.title;
     const groupId = expense.groupId;
+    const expenseAmount = expense.amount;
 
     await Expense.deleteOne({ _id: expense._id });
 
@@ -206,6 +250,21 @@ const deleteExpense = async (req, res) => {
       user: req.user._id,
       action: `deleted expense "${title}"`
     });
+
+    // --- Socket.IO + Push Notification ---
+    emitToGroup(groupId, 'notification', {
+      type: 'expense:deleted',
+      expenseId: expense._id.toString(),
+      message: `${req.user.fullName} deleted "${title}" (₹${expenseAmount.toFixed(2)})`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    }, req.user._id.toString());
+
+    sendPushToGroup(groupId, {
+      title: 'Expense Deleted',
+      body: `${req.user.fullName} removed "${title}" (₹${expenseAmount.toFixed(2)})`,
+      data: { type: 'expense:deleted' },
+    }, req.user._id.toString());
 
     return res.json({ message: 'Expense deleted successfully' });
   } catch (error) {

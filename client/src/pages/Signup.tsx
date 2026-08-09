@@ -1,166 +1,223 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  Typography,
+  Alert,
+  Avatar,
+  Progress,
+} from 'antd';
+import {
+  UserOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  LockOutlined,
+  UserAddOutlined,
+  WalletOutlined,
+} from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
-import { Input } from '../components/ui/Input';
-import { Button } from '../components/ui/Button';
-import { Card } from '../components/ui/Card';
-import { User, Phone, Mail, Lock, ArrowRight } from 'lucide-react';
 import api from '../services/api';
 
+const { Title, Text } = Typography;
+
 export const Signup: React.FC = () => {
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [form] = Form.useForm();
+  const [passwordInput, setPasswordInput] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const { loginUser } = useAuth();
-  const { showToast } = useToast();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const getPasswordStrength = (pass: string) => {
+    if (!pass) return { percent: 0, status: 'normal' as const, label: '' };
+    let score = 0;
+    if (pass.length >= 8) score += 33;
+    if (/[A-Z]/.test(pass) || /[0-9]/.test(pass)) score += 33;
+    if (/[^A-Za-z0-9]/.test(pass) && pass.length >= 10) score += 34;
+
+    if (score <= 33) return { percent: 33, status: 'exception' as const, label: 'Weak' };
+    if (score <= 66) return { percent: 66, status: 'normal' as const, label: 'Medium' };
+    return { percent: 100, status: 'success' as const, label: 'Strong' };
+  };
+
+  const strength = getPasswordStrength(passwordInput);
+
+  const handleSubmit = async (values: any) => {
     setError('');
 
-    if (!fullName || !phone || !email || !password || !confirmPassword) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    if (values.password !== values.confirmPassword) {
+      setError('Passwords do not match. Please verify.');
       return;
     }
 
     try {
       setIsLoading(true);
       const res = await api.post('/auth/signup', {
-        fullName,
-        phone,
-        email,
-        password,
-        confirmPassword
+        fullName: values.fullName.trim(),
+        phone: values.phone.trim(),
+        email: values.email.trim(),
+        password: values.password,
+        confirmPassword: values.confirmPassword,
       });
 
       loginUser(res.data.token, {
         _id: res.data._id,
         fullName: res.data.fullName,
         email: res.data.email,
-        phone: res.data.phone
+        phone: res.data.phone,
       });
 
-      showToast('Account created successfully!', 'success');
+      showSuccess('Account created successfully!');
       navigate('/dashboard');
     } catch (err: any) {
       console.error('Signup error:', err);
-      setError(err.response?.data?.message || 'Failed to create account.');
+      const msg = err.response?.data?.message || 'Failed to create account.';
+      setError(msg);
+      showError(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col justify-center py-8 px-4 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center mb-3">
-          <div className="w-12 h-12 rounded-2xl bg-black text-white flex items-center justify-center font-bold text-2xl shadow-soft">
-            E
-          </div>
+    <div
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#f8fafc',
+        padding: '16px 12px',
+      }}
+    >
+      <div style={{ maxWidth: 420, width: '100%' }}>
+        {/* Header Branding */}
+        <div style={{ textAlign: 'center', marginBottom: 16 }}>
+          <Avatar
+            size={48}
+            style={{
+              backgroundColor: '#1677ff',
+              boxShadow: '0 4px 12px rgba(22,119,255,0.2)',
+              marginBottom: 10,
+            }}
+            icon={<WalletOutlined style={{ fontSize: 24 }} />}
+          />
+          <Title level={3} style={{ margin: 0, fontSize: 22 }}>
+            Create Account
+          </Title>
+          <Text type="secondary" style={{ fontSize: 13 }}>
+            Join SplitWise to track shared expenses
+          </Text>
         </div>
-        <h2 className="text-center text-2xl font-bold text-zinc-900 tracking-tight">
-          Create an account
-        </h2>
-        <p className="mt-1 text-center text-xs text-zinc-500 font-medium">
-          Start tracking flatmate expenses easily
-        </p>
-      </div>
 
-      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
-        <Card className="p-6">
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            {error && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-                {error}
+        {error && (
+          <Alert
+            title={error}
+            type="error"
+            showIcon
+            closable
+            onClose={() => setError('')}
+            style={{ marginBottom: 14, borderRadius: 10 }}
+          />
+        )}
+
+        <Card style={{ borderRadius: 16, boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }} styles={{ body: { padding: 18 } }}>
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={handleSubmit}
+            requiredMark={false}
+          >
+            <Form.Item
+              label={<Text strong style={{ fontSize: 13 }}>Full Name</Text>}
+              name="fullName"
+              rules={[{ required: true, message: 'Please enter your full name' }]}
+            >
+              <Input prefix={<UserOutlined style={{ color: '#9ca3af' }} />} placeholder="e.g. John Doe" size="large" />
+            </Form.Item>
+
+            <Form.Item
+              label={<Text strong style={{ fontSize: 13 }}>Phone Number</Text>}
+              name="phone"
+              rules={[
+                { required: true, message: 'Please enter your phone number' },
+                { min: 10, message: 'Phone number must be at least 10 digits' },
+              ]}
+            >
+              <Input prefix={<PhoneOutlined style={{ color: '#9ca3af' }} />} placeholder="e.g. 9876543210" size="large" />
+            </Form.Item>
+
+            <Form.Item
+              label={<Text strong style={{ fontSize: 13 }}>Email Address</Text>}
+              name="email"
+              rules={[
+                { required: true, message: 'Please enter your email' },
+                { type: 'email', message: 'Please enter a valid email address' },
+              ]}
+            >
+              <Input prefix={<MailOutlined style={{ color: '#9ca3af' }} />} placeholder="name@example.com" size="large" />
+            </Form.Item>
+
+            <Form.Item
+              label={<Text strong style={{ fontSize: 13 }}>Password</Text>}
+              name="password"
+              rules={[
+                { required: true, message: 'Please create a password' },
+                { min: 8, message: 'Password must be at least 8 characters' },
+              ]}
+            >
+              <Input.Password
+                prefix={<LockOutlined style={{ color: '#9ca3af' }} />}
+                placeholder="At least 8 characters"
+                size="large"
+                onChange={(e) => setPasswordInput(e.target.value)}
+              />
+            </Form.Item>
+
+            {passwordInput && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 2 }}>
+                  <Text type="secondary">Strength</Text>
+                  <Text strong>{strength.label}</Text>
+                </div>
+                <Progress percent={strength.percent} status={strength.status} showInfo={false} size="small" />
               </div>
             )}
 
-            <Input
-              label="Full Name"
-              type="text"
-              placeholder="Aryan Sharma"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              icon={<User className="w-4 h-4" />}
-              required
-            />
-
-            <Input
-              label="Phone Number"
-              type="tel"
-              placeholder="+91 9876543210"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              icon={<Phone className="w-4 h-4" />}
-              required
-            />
-
-            <Input
-              label="Email Address"
-              type="email"
-              placeholder="aryan@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              icon={<Mail className="w-4 h-4" />}
-              required
-            />
-
-            <Input
-              label="Password"
-              type="password"
-              placeholder="Min 8 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              icon={<Lock className="w-4 h-4" />}
-              helperText="Must be at least 8 characters long"
-              required
-            />
-
-            <Input
-              label="Confirm Password"
-              type="password"
-              placeholder="Re-enter password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              icon={<Lock className="w-4 h-4" />}
-              required
-            />
+            <Form.Item
+              label={<Text strong style={{ fontSize: 13 }}>Confirm Password</Text>}
+              name="confirmPassword"
+              rules={[{ required: true, message: 'Please confirm your password' }]}
+            >
+              <Input.Password prefix={<LockOutlined style={{ color: '#9ca3af' }} />} placeholder="Repeat password" size="large" />
+            </Form.Item>
 
             <Button
-              type="submit"
-              variant="primary"
-              size="lg"
-              className="w-full mt-3"
-              isLoading={isLoading}
+              type="primary"
+              htmlType="submit"
+              size="large"
+              block
+              loading={isLoading}
+              icon={<UserAddOutlined />}
+              style={{ marginTop: 6 }}
             >
-              Create Account <ArrowRight className="w-4 h-4 ml-1.5" />
+              Sign Up
             </Button>
-          </form>
+          </Form>
 
-          <div className="mt-6 pt-4 border-t border-zinc-100 text-center">
-            <p className="text-xs text-zinc-500 font-medium">
+          <div style={{ textAlign: 'center', marginTop: 16 }}>
+            <Text type="secondary" style={{ fontSize: 13 }}>
               Already have an account?{' '}
-              <Link to="/login" className="text-black font-bold hover:underline">
+              <Link to="/login" style={{ fontWeight: 600, color: '#1677ff' }}>
                 Sign In
               </Link>
-            </p>
+            </Text>
           </div>
         </Card>
       </div>

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const path = require('path');
 const {
   sanitizeUri,
   auditConnectionUri,
@@ -7,7 +8,8 @@ const {
 } = require('../utils/dbDiagnostics');
 
 const connectDB = async () => {
-  const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  // STRICT REQUIREMENT: Only read process.env.MONGODB_URI without any fallback variables or strings
+  const rawUri = process.env.MONGODB_URI;
 
   if (!rawUri || typeof rawUri !== 'string' || !rawUri.trim()) {
     console.error('\n==================================================');
@@ -19,10 +21,14 @@ const connectDB = async () => {
 
   const uri = rawUri.trim();
   const sanitized = sanitizeUri(uri);
+  const maskedPreview = sanitized.length > 30 ? `${sanitized.substring(0, 30)}...` : sanitized;
+  const envPath = path.resolve(__dirname, '../.env');
 
   console.log('\n==================================================');
   console.log('🔍 MongoDB Connection Audit & Pre-flight Diagnostics');
-  console.log(`Connection URI: ${sanitized}`);
+  console.log(`Loaded .env Path:   ${envPath}`);
+  console.log(`URI Preview (30c): ${maskedPreview}`);
+
 
   // 1. Audit connection URI structure
   const uriAudit = auditConnectionUri(uri);

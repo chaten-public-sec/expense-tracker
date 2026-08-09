@@ -50,6 +50,8 @@ const signup = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      group: null,
+      role: null,
       token
     });
   } catch (error) {
@@ -80,11 +82,17 @@ const login = async (req, res) => {
 
     const token = generateToken(user._id);
 
+    const membership = await GroupMember.findOne({ userId: user._id }).populate('groupId');
+    const group = (membership && membership.groupId) ? membership.groupId : null;
+    const role = membership ? membership.role : null;
+
     return res.json({
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
       phone: user.phone,
+      group,
+      role,
       token
     });
   } catch (error) {

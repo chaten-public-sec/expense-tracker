@@ -1,12 +1,32 @@
 import React, { useState } from 'react';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
-import { Badge } from '../ui/Badge';
-import { Avatar } from '../ui/Avatar';
+import {
+  Modal,
+  Button,
+  Tag,
+  Avatar,
+  Space,
+  Typography,
+  Popconfirm,
+  Image,
+  Divider,
+  List,
+} from 'antd';
+import {
+  EditOutlined,
+  DeleteOutlined,
+  CalendarOutlined,
+  CreditCardOutlined,
+  UserOutlined,
+  FileImageOutlined,
+  InfoCircleOutlined,
+  DollarCircleOutlined,
+  MobileOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { Expense } from '../../types';
-import { Calendar, Clock, CreditCard, Banknote, Edit3, Trash2, ExternalLink } from 'lucide-react';
 import api from '../../services/api';
+
+const { Title, Text, Paragraph } = Typography;
 
 interface ExpenseDetailModalProps {
   isOpen: boolean;
@@ -21,12 +41,10 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
   onClose,
   expense,
   onEdit,
-  onExpenseDeleted
+  onExpenseDeleted,
 }) => {
   const { showToast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-  const [showImageFull, setShowImageFull] = useState(false);
 
   if (!expense) return null;
 
@@ -35,7 +53,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
     return date.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
     });
   };
 
@@ -43,7 +61,7 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
     const date = new Date(dateStr);
     return date.toLocaleTimeString('en-IN', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
@@ -53,7 +71,6 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
       await api.delete(`/expenses/${expense._id}`);
       showToast(`Expense "${expense.title}" deleted`, 'info');
       onExpenseDeleted();
-      setShowConfirmDelete(false);
       onClose();
     } catch (err: any) {
       console.error('Delete Expense Error:', err);
@@ -64,163 +81,187 @@ export const ExpenseDetailModal: React.FC<ExpenseDetailModalProps> = ({
   };
 
   return (
-    <>
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        title="Expense Details"
-        maxWidth="md"
-      >
-        <div className="space-y-5 py-2">
-          {/* Header Title & Amount */}
-          <div className="p-4 bg-zinc-50 border border-zinc-200/80 rounded-2xl flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-zinc-900 tracking-tight">{expense.title}</h2>
-              <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1 font-medium">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" /> {formatDate(expense.date)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> {formatTime(expense.date)}
-                </span>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="text-2xl font-bold text-zinc-900">₹{expense.amount}</div>
-              <Badge variant="outline" className="mt-1 uppercase text-[10px]">
-                {expense.paymentMode === 'upi' ? (
-                  <span className="flex items-center gap-1"><CreditCard className="w-3 h-3" /> UPI</span>
-                ) : (
-                  <span className="flex items-center gap-1"><Banknote className="w-3 h-3" /> Cash</span>
-                )}
-              </Badge>
-            </div>
-          </div>
-
-          {/* Paid By */}
-          <div className="space-y-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Paid By</span>
-            <div className="flex items-center gap-3 p-3 bg-white border border-zinc-200 rounded-xl">
-              <Avatar name={expense.paidBy.fullName} size="md" />
-              <div>
-                <h4 className="text-sm font-bold text-zinc-900">{expense.paidBy.fullName}</h4>
-                <p className="text-xs text-zinc-500">{expense.paidBy.phone || expense.paidBy.email}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Split Breakdown */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Split Breakdown</span>
-              <span className="text-xs font-medium text-zinc-500">
-                {expense.splitType === 'everyone' ? 'Everyone' : 'Specific Members'} ({expense.splitDetails.length})
-              </span>
-            </div>
-
-            <div className="border border-zinc-200 rounded-xl divide-y divide-zinc-100 bg-white">
-              {expense.splitDetails.map((item, idx) => (
-                <div key={idx} className="p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <Avatar name={item.user?.fullName || 'User'} size="sm" />
-                    <span className="text-xs font-semibold text-zinc-900">
-                      {item.user?.fullName || 'Member'}
-                    </span>
-                  </div>
-                  <span className="text-xs font-bold text-zinc-900">₹{item.share}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Notes if available */}
-          {expense.notes && (
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Notes</span>
-              <p className="text-xs text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-xl p-3 leading-relaxed">
-                {expense.notes}
-              </p>
-            </div>
-          )}
-
-          {/* Screenshot if available */}
-          {expense.screenshotUrl && (
-            <div className="space-y-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">Payment Screenshot</span>
-              <div
-                onClick={() => setShowImageFull(true)}
-                className="relative group cursor-pointer border border-zinc-200 rounded-xl overflow-hidden bg-zinc-100 p-1 flex items-center justify-center"
-              >
-                <img
-                  src={expense.screenshotUrl}
-                  alt="UPI Receipt"
-                  className="max-h-48 object-contain rounded-lg transition-transform group-hover:scale-[1.02]"
-                />
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-medium transition-opacity">
-                  <ExternalLink className="w-4 h-4 mr-1" /> View Full Image
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center gap-2 pt-3 border-t border-zinc-100">
+    <Modal
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <Space align="center">
+          <InfoCircleOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+          <span>Expense Details</span>
+        </Space>
+      }
+      footer={
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <Popconfirm
+            title="Delete Expense"
+            description="Are you sure you want to delete this expense record?"
+            onConfirm={handleDelete}
+            okText="Yes, Delete"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true, loading: isDeleting }}
+          >
+            <Button danger icon={<DeleteOutlined />}>
+              Delete
+            </Button>
+          </Popconfirm>
+          <Space>
+            <Button onClick={onClose}>Close</Button>
             <Button
-              variant="outline"
-              size="md"
-              className="flex-1"
+              type="primary"
+              icon={<EditOutlined />}
               onClick={() => {
                 onClose();
                 onEdit(expense);
               }}
             >
-              <Edit3 className="w-4 h-4 mr-1.5" /> Edit
+              Edit
             </Button>
-            <Button
-              variant="danger"
-              size="md"
-              className="flex-1"
-              onClick={() => setShowConfirmDelete(true)}
-            >
-              <Trash2 className="w-4 h-4 mr-1.5" /> Delete
-            </Button>
+          </Space>
+        </div>
+      }
+      width={520}
+    >
+      <div style={{ padding: '4px 0' }}>
+        {/* Header Title & Amount */}
+        <div
+          style={{
+            padding: 16,
+            background: '#f8fafc',
+            borderRadius: 10,
+            border: '1px solid #e2e8f0',
+            marginBottom: 16,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+              Expense Title
+            </Text>
+            <Title level={4} style={{ margin: 0 }}>
+              {expense.title}
+            </Title>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>
+              Amount Paid
+            </Text>
+            <Text strong style={{ fontSize: 20, color: '#1677ff' }}>
+              ₹{expense.amount.toFixed(2)}
+            </Text>
           </div>
         </div>
-      </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal
-        isOpen={showConfirmDelete}
-        onClose={() => setShowConfirmDelete(false)}
-        title="Delete Expense?"
-        description="Are you sure you want to delete this expense? Group balances will recalculate automatically."
-        maxWidth="sm"
-      >
-        <div className="flex gap-2 pt-4">
-          <Button
-            variant="ghost"
-            className="w-1/2"
-            onClick={() => setShowConfirmDelete(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            className="w-1/2"
-            isLoading={isDeleting}
-            onClick={handleDelete}
-          >
-            Confirm Delete
-          </Button>
-        </div>
-      </Modal>
+        {/* Metadata Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              Paid By
+            </Text>
+            <Space align="center">
+              <Avatar size="small" style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />}>
+                {expense.paidBy?.fullName?.charAt(0).toUpperCase()}
+              </Avatar>
+              <Text strong style={{ fontSize: 13 }}>
+                {expense.paidBy?.fullName}
+              </Text>
+            </Space>
+          </div>
 
-      {/* Fullscreen Image Preview Modal */}
-      {showImageFull && expense.screenshotUrl && (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setShowImageFull(false)}>
-          <img src={expense.screenshotUrl} alt="UPI Full Screenshot" className="max-w-full max-h-full object-contain rounded-lg" />
+          <div style={{ padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              Payment Mode
+            </Text>
+            <Tag
+              color={expense.paymentMode === 'upi' ? 'blue' : 'default'}
+              icon={expense.paymentMode === 'upi' ? <MobileOutlined /> : <DollarCircleOutlined />}
+              style={{ margin: 0, fontWeight: 500 }}
+            >
+              {expense.paymentMode === 'upi' ? 'UPI / Online' : 'Cash'}
+            </Tag>
+          </div>
+
+          <div style={{ padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              Date Added
+            </Text>
+            <Space size={4}>
+              <CalendarOutlined style={{ color: '#8c8c8c' }} />
+              <Text style={{ fontSize: 12 }}>{formatDate(expense.date || expense.createdAt || '')}</Text>
+            </Space>
+          </div>
+
+          <div style={{ padding: 12, background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              Time Added
+            </Text>
+            <Text style={{ fontSize: 12 }}>{formatTime(expense.date || expense.createdAt || '')}</Text>
+          </div>
         </div>
-      )}
-    </>
+
+        {/* Split Details Breakdown */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text strong style={{ fontSize: 13 }}>
+              Split Breakdown ({expense.splitDetails?.length || 0} participants)
+            </Text>
+            <Tag color="cyan">
+              {expense.splitType === 'everyone' ? 'Equal Split' : 'Custom Split'}
+            </Tag>
+          </div>
+
+          <div style={{ borderRadius: 8, border: '1px solid #f0f0f0', overflow: 'hidden' }}>
+            {expense.splitDetails?.map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 12px',
+                  background: idx % 2 === 0 ? '#fafafa' : '#ffffff',
+                  borderBottom: idx !== (expense.splitDetails.length - 1) ? '1px solid #f0f0f0' : 'none',
+                }}
+              >
+                <Space align="center">
+                  <Avatar size="small" style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
+                    {item.user?.fullName?.charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Text style={{ fontSize: 13 }}>{item.user?.fullName}</Text>
+                </Space>
+                <Text strong style={{ fontSize: 13 }}>
+                  ₹{item.share?.toFixed(2)}
+                </Text>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Attached Screenshot */}
+        {expense.screenshotUrl && (
+          <div style={{ marginBottom: 16 }}>
+            <Text strong style={{ fontSize: 13, display: 'block', marginBottom: 8 }}>
+              Bill / Receipt Image
+            </Text>
+            <Image
+              src={expense.screenshotUrl}
+              alt="Receipt"
+              style={{ maxHeight: 180, borderRadius: 8, objectFit: 'contain' }}
+            />
+          </div>
+        )}
+
+        {/* Notes */}
+        {expense.notes && (
+          <div style={{ padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>
+              Notes / Remarks
+            </Text>
+            <Paragraph style={{ margin: 0, fontSize: 13 }}>{expense.notes}</Paragraph>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 };

@@ -96,3 +96,15 @@ export interface DashboardData {
   recentExpenses?: Expense[];
   recentActivity?: Activity[];
 }
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  message: string;
+  actorName: string;
+  expense?: Expense | null;
+  settlement?: Settlement | null;
+  expenseId?: string | null;
+  timestamp: string;
+  read: boolean;
+}

@@ -8,9 +8,9 @@ interface AuthContextType {
   userRole: 'creator' | 'member' | null;
   token: string | null;
   isLoading: boolean;
-  loginUser: (token: string, userData: User) => void;
+  loginUser: (newToken: string, userData: User, groupData?: Group | null, roleData?: 'creator' | 'member' | null) => Promise<void>;
   logout: () => void;
-  refreshUserData: () => Promise<void>;
+  refreshUserData: () => Promise<{ user: User | null; group: Group | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,13 +30,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setGroup(null);
         setUserRole(null);
         setIsLoading(false);
-        return;
+        return { user: null, group: null };
       }
 
       const res = await api.get('/auth/me');
-      setUser(res.data.user);
-      setGroup(res.data.group || null);
-      setUserRole(res.data.role || null);
+      const loadedUser = res.data.user;
+      const loadedGroup = res.data.group || null;
+      const loadedRole = res.data.role || null;
+
+      setUser(loadedUser);
+      setGroup(loadedGroup);
+      setUserRole(loadedRole);
+
+      return { user: loadedUser, group: loadedGroup };
     } catch (err) {
       console.error('Failed to load user session:', err);
       localStorage.removeItem('token');
@@ -44,6 +50,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setGroup(null);
       setUserRole(null);
+      return { user: null, group: null };
     } finally {
       setIsLoading(false);
     }
@@ -53,11 +60,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUserData();
   }, []);
 
-  const loginUser = (newToken: string, userData: User) => {
+  const loginUser = async (
+    newToken: string,
+    userData: User,
+    groupData?: Group | null,
+    roleData?: 'creator' | 'member' | null
+  ) => {
     localStorage.setItem('token', newToken);
     setToken(newToken);
     setUser(userData);
-    refreshUserData();
+    if (groupData !== undefined) {
+      setGroup(groupData);
+      setUserRole(roleData || null);
+    }
+    await refreshUserData();
   };
 
   const logout = () => {
@@ -69,16 +85,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      group,
-      userRole,
-      token,
-      isLoading,
-      loginUser,
-      logout,
-      refreshUserData
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        group,
+        userRole,
+        token,
+        isLoading,
+        loginUser,
+        logout,
+        refreshUserData,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

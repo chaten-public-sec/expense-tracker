@@ -1,4 +1,10 @@
-const dns = require('dns').promises;
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1', '8.8.4.4']);
+} catch (e) {
+  // Ignore fallback
+}
+const dnsPromises = dns.promises;
 const net = require('net');
 
 /**
@@ -116,13 +122,13 @@ const runNetworkDiagnostics = async (host) => {
   // 1. Test DNS SRV Resolution
   try {
     const srvName = `_mongodb._tcp.${host}`;
-    const srvRecords = await dns.resolveSrv(srvName);
+    const srvRecords = await dns.promises.resolveSrv(srvName);
     result.dnsSuccess = true;
     result.srvRecords = srvRecords;
   } catch (dnsErr) {
     // If SRV failed, test standard A record lookup
     try {
-      await dns.lookup(host);
+      await dns.promises.lookup(host);
       result.dnsSuccess = true;
     } catch (lookupErr) {
       result.errorStage = 'DNS';

@@ -1,12 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { Modal } from '../ui/Modal';
-import { Input } from '../ui/Input';
-import { Button } from '../ui/Button';
+import {
+  Modal,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Radio,
+  Button,
+  Upload,
+  Checkbox,
+  Space,
+  Typography,
+  Alert,
+  Avatar,
+  Divider,
+  Flex,
+} from 'antd';
+import {
+  PlusOutlined,
+  UploadOutlined,
+  DeleteOutlined,
+  DollarOutlined,
+  TeamOutlined,
+  UserOutlined,
+  MobileOutlined,
+  DollarCircleOutlined,
+  UsergroupAddOutlined,
+  CheckOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { useAuth } from '../../context/AuthContext';
 import { GroupMember } from '../../types';
-import { Check, CreditCard, Banknote } from 'lucide-react';
 import api from '../../services/api';
+
+const { Text } = Typography;
+const { TextArea } = Input;
 
 interface AddExpenseModalProps {
   isOpen: boolean;
@@ -19,40 +47,38 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
   isOpen,
   onClose,
   members,
-  onExpenseAdded
+  onExpenseAdded,
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const [form] = Form.useForm();
 
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
   const [splitType, setSplitType] = useState<'everyone' | 'specific'>('everyone');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi'>('cash');
-  const [notes, setNotes] = useState('');
-  
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
-      setTitle('');
-      setAmount('');
-      setPaidBy(user?._id || (members[0]?._id || ''));
+      const defaultPayer = user?._id || (members[0]?._id || '');
+      const allMemberIds = members.map((m) => m._id);
+      form.setFieldsValue({
+        title: '',
+        amount: undefined,
+        paidBy: defaultPayer,
+        splitType: 'everyone',
+        paymentMode: 'cash',
+        notes: '',
+      });
       setSplitType('everyone');
-      setSelectedMembers(members.map(m => m._id));
-      setPaymentMode('cash');
-      setNotes('');
+      setSelectedMembers(allMemberIds);
       setScreenshotFile(null);
       setScreenshotPreview(null);
       setError('');
     }
-  }, [isOpen, user, members]);
+  }, [isOpen, user, members, form]);
 
   const handleMemberToggle = (memberId: string) => {
     if (selectedMembers.includes(memberId)) {
@@ -60,32 +86,24 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
         setError('At least one member must be selected for expense split');
         return;
       }
-      setSelectedMembers(selectedMembers.filter(id => id !== memberId));
+      setSelectedMembers(selectedMembers.filter((id) => id !== memberId));
     } else {
       setSelectedMembers([...selectedMembers, memberId]);
     }
+    setError('');
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setScreenshotFile(file);
-      setScreenshotPreview(URL.createObjectURL(file));
-    }
+  const handleSelectAll = () => {
+    setSelectedMembers(members.map((m) => m._id));
+    setError('');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (values: any) => {
     setError('');
 
-    if (!title.trim()) {
-      setError('Please enter expense title');
-      return;
-    }
-
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      setError('Please enter a valid amount');
+    const numAmount = Number(values.amount);
+    if (!numAmount || numAmount <= 0) {
+      setError('Please enter a valid amount greater than ₹0');
       return;
     }
 
@@ -96,245 +114,246 @@ export const AddExpenseModal: React.FC<AddExpenseModalProps> = ({
 
     try {
       setIsLoading(true);
-      let uploadedUrl: string | null = null;
 
-      if (paymentMode === 'upi' && screenshotFile) {
-        setIsUploading(true);
-        const formData = new FormData();
-        formData.append('image', screenshotFile);
+      let screenshotUrl: string | null = null;
 
-        const uploadRes = await api.post('/expenses/upload-screenshot', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        uploadedUrl = uploadRes.data.imageUrl;
-        setIsUploading(false);
+      // 1. If screenshot attached, upload it first
+      if (screenshotFile) {
+        try {
+          const imgFormData = new FormData();
+          imgFormData.append('image', screenshotFile);
+          const uploadRes = await api.post('/expenses/upload-screenshot', imgFormData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          screenshotUrl = uploadRes.data?.imageUrl || null;
+        } catch (uploadErr) {
+          console.warn('Screenshot upload skipped/failed:', uploadErr);
+        }
       }
 
+      // 2. Post JSON payload to /api/expenses
       await api.post('/expenses', {
-        title: title.trim(),
+        title: values.title.trim(),
         amount: numAmount,
-        paidBy: paidBy || user?._id,
+        paidBy: values.paidBy,
         splitType,
         splitBetween: splitType === 'specific' ? selectedMembers : undefined,
-        paymentMode,
-        screenshotUrl: uploadedUrl,
-        notes: notes.trim()
+        paymentMode: values.paymentMode || 'cash',
+        notes: values.notes?.trim() || '',
+        screenshotUrl,
       });
 
-      showToast(`Expense "${title}" added successfully!`, 'success');
+      showToast(`Expense "${values.title}" added successfully!`, 'success');
       onExpenseAdded();
       onClose();
     } catch (err: any) {
-      console.error('Add Expense Error:', err);
+      console.error('Create Expense Error:', err);
       setError(err.response?.data?.message || 'Failed to add expense');
     } finally {
       setIsLoading(false);
-      setIsUploading(false);
     }
   };
 
-  const parsedAmount = parseFloat(amount) || 0;
-  const activeCount = splitType === 'everyone' ? members.length : selectedMembers.length;
-  const equalShare = activeCount > 0 ? (parsedAmount / activeCount).toFixed(2) : '0.00';
-
   return (
     <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Add New Expense"
-      description="Record a shared expense for your flatmates"
-      maxWidth="md"
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <Space align="center">
+          <DollarOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+          <span>Add New Expense</span>
+        </Space>
+      }
+      footer={null}
+      width={540}
     >
-      <form onSubmit={handleSubmit} className="space-y-4 py-1">
-        {error && (
-          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-            {error}
+      {error && (
+        <Alert
+          title={error}
+          type="error"
+          showIcon
+          closable
+          onClose={() => setError('')}
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={{
+          splitType: 'everyone',
+          paymentMode: 'cash',
+        }}
+        requiredMark="optional"
+      >
+        <Form.Item
+          label="Expense Title"
+          name="title"
+          rules={[{ required: true, message: 'Please enter expense description' }]}
+        >
+          <Input placeholder="e.g. WiFi Bill, Groceries, Dinner" size="large" />
+        </Form.Item>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+          <Form.Item
+            label="Total Amount (₹)"
+            name="amount"
+            rules={[{ required: true, message: 'Please enter total amount' }]}
+          >
+            <InputNumber
+              prefix="₹"
+              placeholder="0.00"
+              style={{ width: '100%' }}
+              size="large"
+              min={1}
+              precision={2}
+            />
+          </Form.Item>
+
+          <Form.Item
+            label="Paid By"
+            name="paidBy"
+            rules={[{ required: true, message: 'Select who paid' }]}
+          >
+            <Select size="large">
+              {members.map((m) => (
+                <Select.Option key={m._id} value={m._id}>
+                  {m.fullName} {m._id === user?._id ? '(You)' : ''}
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </div>
+
+        <Form.Item label="Payment Mode" name="paymentMode">
+          <Radio.Group buttonStyle="solid" style={{ width: '100%' }}>
+            <Radio.Button value="cash" style={{ width: '50%', textAlign: 'center' }}>
+              <Space>
+                <DollarCircleOutlined />
+                <span>Cash Payment</span>
+              </Space>
+            </Radio.Button>
+            <Radio.Button value="upi" style={{ width: '50%', textAlign: 'center' }}>
+              <Space>
+                <MobileOutlined />
+                <span>UPI / Online</span>
+              </Space>
+            </Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+
+        <Form.Item label="Split Method" name="splitType">
+          <Radio.Group
+            value={splitType}
+            onChange={(e) => setSplitType(e.target.value)}
+            buttonStyle="solid"
+            style={{ width: '100%' }}
+          >
+            <Radio.Button value="everyone" style={{ width: '50%', textAlign: 'center' }}>
+              <Space>
+                <TeamOutlined />
+                <span>Split Equally (All)</span>
+              </Space>
+            </Radio.Button>
+            <Radio.Button value="specific" style={{ width: '50%', textAlign: 'center' }}>
+              <Space>
+                <UsergroupAddOutlined />
+                <span>Specific Flatmates</span>
+              </Space>
+            </Radio.Button>
+          </Radio.Group>
+        </Form.Item>
+
+        {splitType === 'specific' && (
+          <div
+            style={{
+              padding: 12,
+              background: '#f8fafc',
+              borderRadius: 8,
+              border: '1px solid #e2e8f0',
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text strong style={{ fontSize: 13 }}>
+                Split Between ({selectedMembers.length} selected):
+              </Text>
+              <Button type="link" size="small" onClick={handleSelectAll} style={{ padding: 0 }}>
+                Select All
+              </Button>
+            </div>
+            <Flex vertical gap={8} style={{ width: '100%' }}>
+              {members.map((m) => (
+                <Checkbox
+                  key={m._id}
+                  checked={selectedMembers.includes(m._id)}
+                  onChange={() => handleMemberToggle(m._id)}
+                  style={{ width: '100%', margin: 0 }}
+                >
+                  <Space align="center">
+                    <Avatar size="small" style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />}>
+                      {m.fullName?.charAt(0).toUpperCase()}
+                    </Avatar>
+                    <span>{m.fullName} {m._id === user?._id ? '(You)' : ''}</span>
+                  </Space>
+                </Checkbox>
+              ))}
+            </Flex>
           </div>
         )}
 
-        <Input
-          label="Expense Title"
-          placeholder="e.g. Groceries, Electricity Bill, Pizza"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Amount (₹)"
-            type="number"
-            step="0.01"
-            placeholder="0.00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            required
-          />
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-600">
-              Paid By
-            </label>
-            <select
-              value={paidBy}
-              onChange={(e) => setPaidBy(e.target.value)}
-              className="w-full bg-white text-zinc-900 text-sm rounded-xl border border-zinc-200 py-2.5 px-3 focus:outline-none focus:border-black focus:ring-1 focus:ring-black"
+        <Form.Item label="Receipt / Bill Screenshot (Optional)">
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <Upload
+              beforeUpload={(file) => {
+                setScreenshotFile(file);
+                setScreenshotPreview(URL.createObjectURL(file));
+                return false;
+              }}
+              showUploadList={false}
+              accept="image/*"
             >
-              {members.map((m) => (
-                <option key={m._id} value={m._id}>
-                  {m.fullName} {m._id === user?._id ? '(You)' : ''}
-                </option>
-              ))}
-            </select>
+              <Button icon={<UploadOutlined />}>Upload Bill Image</Button>
+            </Upload>
+            {screenshotPreview && (
+              <Space align="center">
+                <img
+                  src={screenshotPreview}
+                  alt="Receipt Preview"
+                  style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0' }}
+                />
+                <Button
+                  danger
+                  type="text"
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  onClick={() => {
+                    setScreenshotFile(null);
+                    setScreenshotPreview(null);
+                  }}
+                />
+              </Space>
+            )}
           </div>
-        </div>
+        </Form.Item>
 
-        <div className="space-y-2 pt-1">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-600">
-            Split Between
-          </label>
+        <Form.Item label="Notes / Remarks (Optional)" name="notes">
+          <TextArea rows={2} placeholder="Add any additional details or items purchased" />
+        </Form.Item>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setSplitType('everyone')}
-              className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                splitType === 'everyone'
-                  ? 'border-black bg-zinc-900 text-white shadow-sm font-semibold'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
-              }`}
-            >
-              <span className="text-xs">Everyone ({members.length})</span>
-              {splitType === 'everyone' && <Check className="w-4 h-4 text-white" />}
-            </button>
+        <Divider style={{ margin: '16px 0' }} />
 
-            <button
-              type="button"
-              onClick={() => setSplitType('specific')}
-              className={`p-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                splitType === 'specific'
-                  ? 'border-black bg-zinc-900 text-white shadow-sm font-semibold'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
-              }`}
-            >
-              <span className="text-xs">Specific Members</span>
-              {splitType === 'specific' && <Check className="w-4 h-4 text-white" />}
-            </button>
-          </div>
-
-          {splitType === 'specific' && (
-            <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2 mt-2">
-              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider block">
-                Select Members:
-              </span>
-              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                {members.map((m) => {
-                  const isChecked = selectedMembers.includes(m._id);
-                  return (
-                    <label
-                      key={m._id}
-                      className="flex items-center justify-between p-2 rounded-lg bg-white border border-zinc-200/60 hover:border-zinc-300 cursor-pointer text-xs"
-                    >
-                      <span className="font-medium text-zinc-800">
-                        {m.fullName} {m._id === user?._id ? '(You)' : ''}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleMemberToggle(m._id)}
-                        className="rounded border-zinc-300 text-black focus:ring-black h-4 w-4"
-                      />
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {parsedAmount > 0 && (
-            <p className="text-xs text-zinc-500 bg-zinc-100 p-2.5 rounded-xl text-center font-medium">
-              Each person's share: <span className="font-bold text-zinc-900">₹{equalShare}</span> ({activeCount} members)
-            </p>
-          )}
-        </div>
-
-        <div className="space-y-2 pt-1">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-600">
-            Payment Mode
-          </label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setPaymentMode('cash')}
-              className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-medium transition-all ${
-                paymentMode === 'cash'
-                  ? 'border-black bg-zinc-900 text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
-              }`}
-            >
-              <Banknote className="w-4 h-4" /> Cash
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPaymentMode('upi')}
-              className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 text-xs font-medium transition-all ${
-                paymentMode === 'upi'
-                  ? 'border-black bg-zinc-900 text-white shadow-sm'
-                  : 'border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50'
-              }`}
-            >
-              <CreditCard className="w-4 h-4" /> UPI
-            </button>
-          </div>
-
-          {paymentMode === 'upi' && (
-            <div className="p-3 bg-zinc-50 border border-zinc-200 rounded-xl space-y-2 mt-2">
-              <label className="block text-xs font-semibold text-zinc-700">
-                Optional UPI Screenshot Proof
-              </label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="block w-full text-xs text-zinc-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-black file:text-white hover:file:bg-zinc-800"
-              />
-              {screenshotPreview && (
-                <div className="mt-2 relative w-20 h-20 rounded-xl overflow-hidden border border-zinc-300">
-                  <img src={screenshotPreview} alt="Screenshot preview" className="w-full h-full object-cover" />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <Input
-          label="Optional Notes"
-          placeholder="e.g. Bought from D-Mart"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-
-        <div className="flex gap-2 pt-3 border-t border-zinc-100">
-          <Button
-            type="button"
-            variant="ghost"
-            className="w-1/3"
-            onClick={onClose}
-          >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button onClick={onClose} disabled={isLoading}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-2/3"
-            isLoading={isLoading || isUploading}
-          >
+          <Button type="primary" htmlType="submit" loading={isLoading} icon={<PlusOutlined />}>
             Save Expense
           </Button>
         </div>
-      </form>
+      </Form>
     </Modal>
   );
 };

@@ -1,18 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Modal } from '../ui/Modal';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
+import {
+  Modal,
+  Button,
+  Input,
+  Typography,
+  Alert,
+  Space,
+  Tag,
+} from 'antd';
+import {
+  SafetyCertificateOutlined,
+  CopyOutlined,
+  CheckOutlined,
+  ClockCircleOutlined,
+  KeyOutlined,
+  CheckCircleOutlined,
+} from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { Settlement, OwedPerson } from '../../types';
-import { ShieldCheck, Clock, AlertTriangle, KeyRound, CheckCircle2 } from 'lucide-react';
 import api from '../../services/api';
+
+const { Title, Text, Paragraph } = Typography;
 
 interface SettlementModalProps {
   isOpen: boolean;
   onClose: () => void;
-  // Mode 1: Initiating payment to receiver
   targetPerson?: OwedPerson | null;
-  // Mode 2: Verifying payment OTP as receiver
   pendingSettlement?: Settlement | null;
   onSettlementUpdated: () => void;
 }
@@ -22,7 +35,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   onClose,
   targetPerson,
   pendingSettlement,
-  onSettlementUpdated
+  onSettlementUpdated,
 }) => {
   const { showToast } = useToast();
 
@@ -30,7 +43,8 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   const [confirmStep, setConfirmStep] = useState(true);
   const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(120);
+  const [timeLeft, setTimeLeft] = useState<number>(300);
+  const [copiedOtp, setCopiedOtp] = useState(false);
 
   // Receiver OTP entry state
   const [otpInput, setOtpInput] = useState('');
@@ -61,6 +75,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       setExpiresAt(null);
       setOtpInput('');
       setError('');
+      setCopiedOtp(false);
     }
   }, [isOpen, targetPerson, pendingSettlement]);
 
@@ -72,13 +87,13 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       setError('');
       const res = await api.post('/settlements', {
         receiverId: targetPerson.user._id,
-        amount: targetPerson.amount
+        amount: targetPerson.amount,
       });
 
       setGeneratedOtp(res.data.otp);
       setExpiresAt(res.data.expiresAt);
       setConfirmStep(false);
-      showToast('Payment initiated! Show OTP to receiver.', 'info');
+      showToast('Payment initiated! Share the 6-digit OTP with receiver to verify.', 'info');
       onSettlementUpdated();
     } catch (err: any) {
       console.error('Initiate Payment Error:', err);
@@ -89,173 +104,222 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   };
 
   // Handle Receiver verifying OTP
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleVerifyOtp = async () => {
     if (!pendingSettlement) return;
 
     if (!otpInput || otpInput.trim().length !== 6) {
-      setError('Please enter the 6-digit OTP');
+      setError('Please enter the full 6-digit OTP code');
       return;
     }
 
     try {
       setIsLoading(true);
       setError('');
-      const res = await api.post(`/settlements/${pendingSettlement._id}/verify`, {
-        otp: otpInput.trim()
+      await api.post(`/settlements/${pendingSettlement._id}/verify`, {
+        otp: otpInput.trim(),
       });
 
-      showToast('Payment verified successfully!', 'success');
+      showToast(`Settlement of ₹${pendingSettlement.amount} verified successfully!`, 'success');
       onSettlementUpdated();
       onClose();
     } catch (err: any) {
       console.error('Verify OTP Error:', err);
-      setError(err.response?.data?.message || 'Invalid or expired OTP');
+      setError(err.response?.data?.message || 'Invalid or expired OTP. Verification failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const formatSeconds = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  const copyOtpToClipboard = () => {
+    if (generatedOtp) {
+      navigator.clipboard.writeText(generatedOtp);
+      setCopiedOtp(true);
+      showToast('OTP copied to clipboard!', 'success');
+      setTimeout(() => setCopiedOtp(false), 2000);
+    }
   };
 
-  // Render Payer Initiation View
-  if (targetPerson) {
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        title={confirmStep ? "Confirm Payment Settlement" : "Show OTP to Receiver"}
-        description={confirmStep ? `Confirm payment of ₹${targetPerson.amount} to ${targetPerson.user.fullName}` : "Verification Pending"}
-        maxWidth="sm"
-      >
-        {confirmStep ? (
-          <div className="space-y-4 py-2 text-center">
-            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl space-y-1">
-              <span className="text-xs text-zinc-500 font-medium">Paying To</span>
-              <h4 className="text-lg font-bold text-zinc-900">{targetPerson.user.fullName}</h4>
-              <div className="text-2xl font-extrabold text-zinc-900 mt-1">₹{targetPerson.amount}</div>
-            </div>
+  const isReceiverMode = !!pendingSettlement;
 
-            <p className="text-xs text-zinc-600 font-medium">
-              Have you completed the payment? Clicking "Yes" will generate a 6-digit OTP for the receiver to verify.
-            </p>
+  return (
+    <Modal
+      open={isOpen}
+      onCancel={onClose}
+      title={
+        <Space align="center">
+          <SafetyCertificateOutlined style={{ color: '#1677ff', fontSize: 18 }} />
+          <span>{isReceiverMode ? 'Verify Received Payment' : 'Settle Payment Dues'}</span>
+        </Space>
+      }
+      footer={null}
+      width={460}
+    >
+      {error && (
+        <Alert
+          title={error}
+          type="error"
+          showIcon
+          closable
+          onClose={() => setError('')}
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
-            {error && (
-              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-                {error}
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="ghost"
-                className="w-1/2"
-                onClick={onClose}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                className="w-1/2"
-                isLoading={isLoading}
-                onClick={handleInitiatePayment}
-              >
-                Yes, Generate OTP
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-5 py-2 text-center">
-            <div className="p-5 bg-zinc-900 text-white rounded-2xl space-y-3 shadow-card">
-              <div className="flex items-center justify-center gap-1.5 text-xs text-zinc-400 font-semibold uppercase tracking-wider">
-                <KeyRound className="w-4 h-4 text-emerald-400" /> Show this OTP to receiver
-              </div>
-              <div className="text-4xl font-mono font-extrabold tracking-widest text-white select-all">
-                {generatedOtp}
-              </div>
-              <div className="flex items-center justify-center gap-1.5 text-xs text-amber-400 font-medium">
-                <Clock className="w-3.5 h-3.5" /> Valid for: {formatSeconds(timeLeft)}
-              </div>
-            </div>
-
-            <p className="text-xs text-zinc-500">
-              Tell <strong className="text-zinc-900">{targetPerson.user.fullName}</strong> to enter this OTP on their dashboard under "Pending Verification".
-            </p>
-
-            <Button
-              variant="outline"
-              size="md"
-              className="w-full"
-              onClick={onClose}
-            >
-              Done / Close
-            </Button>
-          </div>
-        )}
-      </Modal>
-    );
-  }
-
-  // Render Receiver Verification View
-  if (pendingSettlement) {
-    return (
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        title="Verify Payment OTP"
-        description={`Enter 6-digit OTP provided by ${pendingSettlement.payer.fullName}`}
-        maxWidth="sm"
-      >
-        <form onSubmit={handleVerifyOtp} className="space-y-4 py-2">
-          <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-2xl text-center space-y-1">
-            <span className="text-xs text-zinc-500 font-medium">Amount Received</span>
-            <div className="text-2xl font-bold text-zinc-900">₹{pendingSettlement.amount}</div>
-            <p className="text-xs text-zinc-600">From: <strong className="text-zinc-900">{pendingSettlement.payer.fullName}</strong></p>
+      {/* MODE 1: RECEIVER ENTERING OTP */}
+      {isReceiverMode ? (
+        <div style={{ textAlign: 'center', padding: '8px 0' }}>
+          <div
+            style={{
+              padding: 16,
+              background: '#f8fafc',
+              borderRadius: 10,
+              border: '1px solid #e2e8f0',
+              marginBottom: 16,
+            }}
+          >
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Incoming Payment From
+            </Text>
+            <Title level={4} style={{ margin: '4px 0' }}>
+              {pendingSettlement.payer?.fullName}
+            </Title>
+            <Text strong style={{ fontSize: 22, color: '#1677ff' }}>
+              ₹{pendingSettlement.amount.toFixed(2)}
+            </Text>
           </div>
 
-          {error && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
-              {error}
-            </div>
-          )}
+          <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 16 }}>
+            Ask <strong>{pendingSettlement.payer?.fullName}</strong> for the 6-digit OTP generated on their device:
+          </Paragraph>
 
           <Input
-            label="6-Digit OTP"
-            placeholder="000000"
+            placeholder="• • • • • •"
             value={otpInput}
-            onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+            onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
             maxLength={6}
-            className="font-mono text-center text-xl tracking-widest font-bold"
-            autoFocus
-            required
+            size="large"
+            style={{
+              textAlign: 'center',
+              letterSpacing: 12,
+              fontFamily: 'monospace',
+              fontSize: 24,
+              fontWeight: 700,
+              marginBottom: 20,
+              height: 52,
+            }}
           />
 
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-1/3"
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-2/3"
-              isLoading={isLoading}
-            >
-              <CheckCircle2 className="w-4 h-4 mr-1.5" /> Verify Payment
-            </Button>
-          </div>
-        </form>
-      </Modal>
-    );
-  }
+          <Button
+            type="primary"
+            size="large"
+            block
+            onClick={handleVerifyOtp}
+            loading={isLoading}
+            disabled={otpInput.length !== 6}
+            icon={<CheckCircleOutlined />}
+          >
+            Verify & Confirm Receipt
+          </Button>
+        </div>
+      ) : (
+        /* MODE 2: PAYER INITIATING PAYMENT */
+        <div>
+          {confirmStep ? (
+            <div style={{ textAlign: 'center', padding: '8px 0' }}>
+              <div
+                style={{
+                  padding: 16,
+                  background: '#f8fafc',
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  marginBottom: 16,
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  You are paying to
+                </Text>
+                <Title level={4} style={{ margin: '4px 0' }}>
+                  {targetPerson?.user?.fullName}
+                </Title>
+                <Text strong style={{ fontSize: 24, color: '#ef4444' }}>
+                  ₹{targetPerson?.amount?.toFixed(2)}
+                </Text>
+              </div>
 
-  return null;
+              <Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 20 }}>
+                Clicking confirm will generate a one-time 6-digit verification code to share with {targetPerson?.user?.fullName}.
+              </Paragraph>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button block onClick={onClose} disabled={isLoading}>
+                  Cancel
+                </Button>
+                <Button
+                  type="primary"
+                  block
+                  onClick={handleInitiatePayment}
+                  loading={isLoading}
+                  icon={<KeyOutlined />}
+                >
+                  Generate Payment OTP
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* OTP GENERATED VIEW */
+            <div style={{ textAlign: 'center', padding: '8px 0' }}>
+              <Alert
+                title="Show this OTP to recipient to complete settlement"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+
+              <div
+                style={{
+                  padding: 20,
+                  background: '#fafafa',
+                  borderRadius: 12,
+                  border: '2px dashed #1677ff',
+                  marginBottom: 16,
+                }}
+              >
+                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+                  One-Time Verification PIN
+                </Text>
+                <Title
+                  level={2}
+                  style={{
+                    margin: 0,
+                    letterSpacing: 10,
+                    fontFamily: 'monospace',
+                    color: '#1677ff',
+                    fontWeight: 800,
+                  }}
+                >
+                  {generatedOtp}
+                </Title>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 16 }}>
+                <Button
+                  icon={copiedOtp ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+                  onClick={copyOtpToClipboard}
+                >
+                  {copiedOtp ? 'Copied' : 'Copy Code'}
+                </Button>
+                <Tag icon={<ClockCircleOutlined />} color={timeLeft < 60 ? 'error' : 'processing'}>
+                  Expires in {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                </Tag>
+              </div>
+
+              <Button type="primary" block onClick={onClose}>
+                Done
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
 };

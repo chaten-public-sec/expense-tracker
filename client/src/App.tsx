@@ -1,35 +1,45 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { ConfigProvider, App as AntdApp, Spin } from 'antd';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './components/ui/Toast';
-
-import { Login } from './pages/Login';
-import { Signup } from './pages/Signup';
-import { NoGroup } from './pages/NoGroup';
-import { Dashboard } from './pages/Dashboard';
-import { Expenses } from './pages/Expenses';
-import { Members } from './pages/Members';
-import { Profile } from './pages/Profile';
-import { Settlements } from './pages/Settlements';
-
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navbar } from './components/layout/Navbar';
 import { BottomNav } from './components/layout/BottomNav';
+
+const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
+const Signup = lazy(() => import('./pages/Signup').then(m => ({ default: m.Signup })));
+const NoGroup = lazy(() => import('./pages/NoGroup').then(m => ({ default: m.NoGroup })));
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Expenses = lazy(() => import('./pages/Expenses').then(m => ({ default: m.Expenses })));
+const Members = lazy(() => import('./pages/Members').then(m => ({ default: m.Members })));
+const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+const Settlements = lazy(() => import('./pages/Settlements').then(m => ({ default: m.Settlements })));
+
+const PageLoader: React.FC = () => (
+  <div
+    style={{
+      minHeight: '60dvh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 12,
+      padding: 20,
+    }}
+  >
+    <Spin size="large" />
+    <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 500 }}>Loading...</span>
+  </div>
+);
 
 const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, group, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-white">
-        <div className="text-center space-y-3">
-          <div className="w-10 h-10 rounded-2xl bg-black text-white flex items-center justify-center font-bold text-xl mx-auto animate-pulse">
-            E
-          </div>
-          <p className="text-xs text-zinc-500 font-medium">Loading session...</p>
-        </div>
-      </div>
-    );
+    return <PageLoader />;
   }
 
   if (!user) {
@@ -40,10 +50,14 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
     return <Navigate to="/no-group" replace />;
   }
 
+  if (group && location.pathname === '/no-group') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return (
-    <div className="min-h-screen bg-white text-zinc-900 flex flex-col antialiased">
+    <div className="mobile-app-container">
       <Navbar />
-      <main className="flex-1 bg-white">
+      <main style={{ flex: 1, padding: '12px 12px 76px', width: '100%' }}>
         {children}
       </main>
       {group && <BottomNav />}
@@ -53,70 +67,120 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
 export const App: React.FC = () => {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public Auth Routes */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+    <ErrorBoundary>
+      <ConfigProvider
+        theme={{
+          token: {
+            colorPrimary: '#1677ff',
+            borderRadius: 10,
+            fontFamily: `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif`,
+            fontSize: 14,
+            colorText: '#1f2937',
+            colorTextHeading: '#111827',
+            colorBgContainer: '#ffffff',
+            colorBgLayout: '#f8fafc',
+            controlHeight: 42,
+          },
+          components: {
+            Button: {
+              controlHeight: 42,
+              borderRadius: 10,
+              fontWeight: 600,
+            },
+            Input: {
+              controlHeight: 42,
+              borderRadius: 10,
+            },
+            Select: {
+              controlHeight: 42,
+              borderRadius: 10,
+            },
+            Card: {
+              borderRadiusLG: 14,
+            },
+            Modal: {
+              borderRadiusLG: 16,
+            },
+          },
+        }}
+      >
+        <AntdApp>
+          <ToastProvider>
+            <AuthProvider>
+              <SocketProvider>
+              <BrowserRouter
+                future={{
+                  v7_startTransition: true,
+                  v7_relativeSplatPath: true,
+                }}
+              >
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    {/* Public Auth Routes */}
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/signup" element={<Signup />} />
 
-            {/* Protected Routes */}
-            <Route
-              path="/no-group"
-              element={
-                <ProtectedLayout>
-                  <NoGroup />
-                </ProtectedLayout>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedLayout>
-                  <Dashboard />
-                </ProtectedLayout>
-              }
-            />
-            <Route
-              path="/expenses"
-              element={
-                <ProtectedLayout>
-                  <Expenses />
-                </ProtectedLayout>
-              }
-            />
-            <Route
-              path="/members"
-              element={
-                <ProtectedLayout>
-                  <Members />
-                </ProtectedLayout>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedLayout>
-                  <Profile />
-                </ProtectedLayout>
-              }
-            />
-            <Route
-              path="/settlements"
-              element={
-                <ProtectedLayout>
-                  <Settlements />
-                </ProtectedLayout>
-              }
-            />
+                    {/* Protected Routes */}
+                    <Route
+                      path="/no-group"
+                      element={
+                        <ProtectedLayout>
+                          <NoGroup />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/dashboard"
+                      element={
+                        <ProtectedLayout>
+                          <Dashboard />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/expenses"
+                      element={
+                        <ProtectedLayout>
+                          <Expenses />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/members"
+                      element={
+                        <ProtectedLayout>
+                          <Members />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/profile"
+                      element={
+                        <ProtectedLayout>
+                          <Profile />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/settlements"
+                      element={
+                        <ProtectedLayout>
+                          <Settlements />
+                        </ProtectedLayout>
+                      }
+                    />
 
-            {/* Default Catch-all */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </ToastProvider>
+                    {/* Default Catch-all */}
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Routes>
+                </Suspense>
+              </BrowserRouter>
+              </SocketProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </AntdApp>
+      </ConfigProvider>
+    </ErrorBoundary>
   );
 };
 

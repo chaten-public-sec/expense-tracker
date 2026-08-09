@@ -4,6 +4,8 @@ const Expense = require('../models/Expense');
 const Settlement = require('../models/Settlement');
 const Activity = require('../models/Activity');
 const { calculateGroupBalances } = require('../utils/balance');
+const { emitToGroup } = require('../socket/socketManager');
+const { sendPushToGroup } = require('../services/pushService');
 
 // Generate random 6-character uppercase alphanumeric code
 const generateInviteCode = () => {
@@ -111,6 +113,20 @@ const joinGroup = async (req, res) => {
       user: req.user._id,
       action: 'joined the group'
     });
+
+    // --- Socket.IO + Push Notification to existing group members ---
+    emitToGroup(group._id, 'notification', {
+      type: 'group:member_joined',
+      message: `${req.user.fullName} joined the group`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    }, req.user._id.toString());
+
+    sendPushToGroup(group._id, {
+      title: 'New Member Joined',
+      body: `${req.user.fullName} joined your group "${group.name}"`,
+      data: { type: 'group:member_joined' },
+    }, req.user._id.toString());
 
     return res.json({
       group,

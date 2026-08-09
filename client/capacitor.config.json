@@ -1,0 +1,9 @@
+{
+  "appId": "com.expensetracker.app",
+  "appName": "Expense Tracker",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

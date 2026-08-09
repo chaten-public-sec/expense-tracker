@@ -3,6 +3,8 @@ const Settlement = require('../models/Settlement');
 const GroupMember = require('../models/GroupMember');
 const Activity = require('../models/Activity');
 const User = require('../models/User');
+const { emitToUser } = require('../socket/socketManager');
+const { sendPushToUser } = require('../services/pushService');
 
 // Helper to generate 6-digit OTP
 const generateOTP = () => {
@@ -69,6 +71,21 @@ const createSettlement = async (req, res) => {
     const populated = await Settlement.findById(settlement._id)
       .populate('payer', 'fullName email phone')
       .populate('receiver', 'fullName email phone');
+
+    // --- Socket.IO + Push Notification to RECEIVER ---
+    emitToUser(receiverId, 'notification', {
+      type: 'settlement:created',
+      settlement: populated,
+      message: `${req.user.fullName} wants to settle ₹${numAmount.toFixed(2)} with you — verify the OTP`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    });
+
+    sendPushToUser(receiverId, {
+      title: 'Settlement Request',
+      body: `${req.user.fullName} wants to settle ₹${numAmount.toFixed(2)} — open app to verify OTP`,
+      data: { type: 'settlement:created', settlementId: settlement._id.toString() },
+    });
 
     // Return the plain rawOtp to the payer ONLY once for screen display
     return res.status(201).json({
@@ -150,6 +167,22 @@ const verifyOTP = async (req, res) => {
       groupId: settlement.groupId,
       user: req.user._id,
       action: `verified ₹${settlement.amount} payment from ${settlement.payer.fullName}`
+    });
+
+    // --- Socket.IO + Push Notification to PAYER ---
+    const payerId = settlement.payer._id.toString();
+    emitToUser(payerId, 'notification', {
+      type: 'settlement:verified',
+      settlement,
+      message: `${req.user.fullName} verified your ₹${settlement.amount.toFixed(2)} payment — Settlement complete!`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    });
+
+    sendPushToUser(payerId, {
+      title: 'Payment Verified!',
+      body: `${req.user.fullName} confirmed your ₹${settlement.amount.toFixed(2)} settlement`,
+      data: { type: 'settlement:verified', settlementId: settlement._id.toString() },
     });
 
     return res.json({
