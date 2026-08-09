@@ -1,6 +1,6 @@
 {
-  "appId": "com.expensetracker.app",
-  "appName": "Expense Tracker",
+  "appId": "com.splitwise.app",
+  "appName": "Splitwise",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
