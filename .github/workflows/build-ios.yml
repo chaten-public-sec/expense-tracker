@@ -1,8 +1,8 @@
-name: Build iOS Native App (Splitwise)
+name: Build iOS IPA
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: client/package-lock.json
 
       - name: Install Client Dependencies
@@ -35,26 +35,33 @@ jobs:
           cd client
           npx cap sync ios
 
-      - name: Build Xcode iOS App (Simulator / Unsigned Archive)
+      - name: Build iPhone Device App
         run: |
           cd client/ios/App
-          xcodebuild -project App.xcodeproj \
-                     -scheme App \
-                     -sdk iphonesimulator \
-                     -configuration Release \
-                     -derivedDataPath build \
-                     CODE_SIGN_IDENTITY="" \
-                     CODE_SIGNING_REQUIRED=NO \
-                     CODE_SIGNING_ALLOWED=NO
 
-      - name: Package iOS App Artifact
+          xcodebuild \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create IPA
         run: |
-          mkdir -p output
-          cp -R client/ios/App/build/Build/Products/Release-iphonesimulator/App.app output/Splitwise.app
-          cd output && zip -r Splitwise-iOS-Simulator.zip Splitwise.app
+          mkdir -p Payload
 
-      - name: Upload iOS App Artifact
+          cp -R \
+            client/ios/App/build/Build/Products/Release-iphoneos/App.app \
+            Payload/App.app
+
+          zip -r Splitwise.ipa Payload
+
+          rm -rf Payload
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Splitwise-iOS-App
-          path: output/Splitwise-iOS-Simulator.zip
+          name: Splitwise-iOS-IPA
+          path: Splitwise.ipa
