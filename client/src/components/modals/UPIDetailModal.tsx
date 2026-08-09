@@ -32,6 +32,7 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
 }) => {
   const { showSuccess, showError } = useToast();
   const [copied, setCopied] = useState(false);
+  const [copiedAmount, setCopiedAmount] = useState(false);
 
   if (!user) return null;
 
@@ -47,12 +48,21 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
         upiId: user.upiId,
         name: user.fullName,
         amount: amountToPay || 0,
-        note: `SplitWise Dues Payment to ${user.fullName}`,
+        note: `SplitWise Payment to ${user.fullName}`,
       },
       () => {
         showSuccess('Launching UPI app... Or scan QR code below.');
       }
     );
+  };
+
+  const copyAmount = () => {
+    if (amountToPay) {
+      navigator.clipboard.writeText(amountToPay.toFixed(2));
+      setCopiedAmount(true);
+      showSuccess(`Amount ₹${amountToPay.toFixed(2)} copied to clipboard!`);
+      setTimeout(() => setCopiedAmount(false), 2000);
+    }
   };
 
   const copyUPI = () => {
@@ -94,6 +104,7 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
       ]}
       width={460}
       centered
+      style={{ maxWidth: '96vw' }}
     >
       <Flex vertical align="center" gap={14} style={{ padding: '10px 0' }}>
         {/* User Avatar & Name */}
@@ -126,11 +137,25 @@ export const UPIDetailModal: React.FC<UPIDetailModalProps> = ({
             }}
           >
             <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
-              Amount Dues to Pay
+              Calculated Dues to Pay
             </Text>
-            <Text strong style={{ fontSize: 22, color: '#1677ff', display: 'block', marginBottom: 8 }}>
+            <Text strong style={{ fontSize: 22, color: '#1677ff', display: 'block', marginBottom: 6 }}>
               ₹{amountToPay.toFixed(2)}
             </Text>
+
+            <Button
+              size="small"
+              onClick={copyAmount}
+              icon={copiedAmount ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+              style={{
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                marginBottom: 10,
+              }}
+            >
+              {copiedAmount ? 'Copied ₹' + amountToPay.toFixed(2) : '1-Tap Copy Amount (₹' + amountToPay.toFixed(2) + ')'}
+            </Button>
 
             {user.upiId && (
               <Row gutter={[6, 6]}>

@@ -26,7 +26,7 @@ import {
   SendOutlined,
   DollarOutlined,
   ThunderboltOutlined,
-  MobileOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
 import { Settlement, OwedPerson } from '../../types';
@@ -59,6 +59,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedUpi, setCopiedUpi] = useState(false);
+  const [copiedAmount, setCopiedAmount] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -67,6 +68,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       setProofPublicId(null);
       setNote('');
       setCopiedUpi(false);
+      setCopiedAmount(false);
     }
   }, [isOpen, targetPerson]);
 
@@ -85,12 +87,19 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
         upiId: recipient.upiId,
         name: recipient.fullName,
         amount: amountToPay,
-        note: `SplitWise Dues Payment to ${recipient.fullName}`,
+        note: `SplitWise Payment to ${recipient.fullName}`,
       },
       () => {
         showSuccess('Opening payment app... Or scan QR / copy UPI ID below.');
       }
     );
+  };
+
+  const copyAmount = () => {
+    navigator.clipboard.writeText(amountToPay.toFixed(2));
+    setCopiedAmount(true);
+    showSuccess(`Amount ₹${amountToPay.toFixed(2)} copied to clipboard!`);
+    setTimeout(() => setCopiedAmount(false), 2000);
   };
 
   const copyUPI = () => {
@@ -180,16 +189,45 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       ]}
       width={500}
       centered
+      style={{ maxWidth: '96vw' }}
     >
       <div style={{ padding: '4px 0' }}>
-        {/* Amount Header Card */}
-        <Card size="small" style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #edf2f7 100%)', borderRadius: 12, textAlign: 'center', marginBottom: 14 }}>
-          <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-            Total Calculated Amount Due
+        {/* Amount & Quick Copy Header Card */}
+        <Card
+          size="small"
+          style={{
+            background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+            color: '#ffffff',
+            borderRadius: 14,
+            textAlign: 'center',
+            marginBottom: 14,
+            boxShadow: '0 4px 14px rgba(22, 119, 255, 0.25)',
+          }}
+          styles={{ body: { padding: '14px 12px' } }}
+        >
+          <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.85)', display: 'block' }}>
+            Calculated Dues to Pay
           </Text>
-          <Title level={3} style={{ margin: '2px 0 0', color: '#1677ff' }}>
+          <Title level={2} style={{ margin: '2px 0 8px', color: '#ffffff', fontWeight: 800 }}>
             ₹{amountToPay.toFixed(2)}
           </Title>
+
+          <Button
+            size="small"
+            onClick={copyAmount}
+            icon={copiedAmount ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+            style={{
+              borderRadius: 20,
+              fontSize: 11,
+              fontWeight: 600,
+              background: 'rgba(255, 255, 255, 0.2)',
+              color: '#ffffff',
+              borderColor: 'transparent',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            {copiedAmount ? 'Copied ₹' + amountToPay.toFixed(2) : '1-Tap Copy Amount (₹' + amountToPay.toFixed(2) + ')'}
+          </Button>
         </Card>
 
         {/* 1. App-Specific UPI Launcher Grid (Google Pay, PhonePe, Paytm, MobiKwik, BHIM, Cred) */}
@@ -199,7 +237,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
             title={
               <Space size={6}>
                 <ThunderboltOutlined style={{ color: '#faad14' }} />
-                <Text strong style={{ fontSize: 12 }}>1-Tap Instant App Pay (Select Installed App)</Text>
+                <Text strong style={{ fontSize: 12 }}>1. Select Installed App to Pay</Text>
               </Space>
             }
             style={{ borderRadius: 12, marginBottom: 14, background: '#fafafa' }}
@@ -229,6 +267,9 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                 </Col>
               ))}
             </Row>
+            <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 8, textAlign: 'center' }}>
+              💡 Opens recipient VPA directly in your app without NPCI ₹2K blocks or WhatsApp redirects.
+            </Text>
           </Card>
         ) : (
           <Alert
@@ -246,7 +287,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
           title={
             <Space size={6}>
               <QrcodeOutlined style={{ color: '#1677ff' }} />
-              <Text strong style={{ fontSize: 12 }}>Scan QR Code or Copy UPI ID</Text>
+              <Text strong style={{ fontSize: 12 }}>2. Scan QR Code or Copy UPI VPA</Text>
             </Space>
           }
           style={{ borderRadius: 12, marginBottom: 14, background: '#ffffff' }}
@@ -262,7 +303,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
                 style={{ objectFit: 'contain', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}
               />
               <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 6 }}>
-                Scan image directly with camera / scanner app
+                Scan image directly with GPay, PhonePe, Paytm, or MobiKwik
               </Text>
             </div>
           ) : (
@@ -301,7 +342,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
         {/* 3. Action Toggle: Paid vs Will Pay Soon */}
         <div style={{ marginBottom: 14 }}>
           <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-            Select Payment Status
+            3. Select Payment Status
           </Text>
           <Segmented
             block
@@ -317,7 +358,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
         {paymentMode === 'paid' ? (
           <div>
             <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-              Upload Payment Proof Screenshot (Optional)
+              4. Upload Payment Proof Screenshot (Optional)
             </Text>
             {proofUrl ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f6ffed', padding: 8, borderRadius: 8, border: '1px solid #b7eb8f', marginBottom: 10 }}>

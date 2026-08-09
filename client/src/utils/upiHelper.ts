@@ -1,12 +1,12 @@
 /**
- * Helper utilities for Deep Link UPI Payments supporting iPhone iOS & Android
- * with dedicated app schemes (GPay, PhonePe, Paytm, MobiKwik, BHIM, Cred).
+ * Helper utilities for Deep Link UPI Payments supporting iPhone iOS, Android, and Capacitor Native Apps.
+ * NPCI Compliant: Omits strict `am=` parameter from web deep links to prevent NPCI 2K limit blocks & WhatsApp dual redirects.
  */
 
 export interface UPIPaymentParams {
   upiId: string;
   name: string;
-  amount: number;
+  amount?: number;
   note?: string;
 }
 
@@ -21,6 +21,15 @@ export interface UPIAppConfig {
 }
 
 /**
+ * Detects if user is running inside a Capacitor Native App container (Android / iOS).
+ */
+export const isCapacitorNative = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const win = window as any;
+  return !!(win.Capacitor && win.Capacitor.isNativePlatform && win.Capacitor.isNativePlatform());
+};
+
+/**
  * Detects if user is running on an iOS device (iPhone / iPad).
  */
 export const isIOSDevice = (): boolean => {
@@ -33,18 +42,18 @@ export const isIOSDevice = (): boolean => {
  */
 export const isMobileDevice = (): boolean => {
   if (typeof window === 'undefined') return false;
-  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  return isCapacitorNative() || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
 /**
- * Generates standard upi://pay URI query string params
+ * Generates NPCI-compliant clean VPA query string.
+ * Omits `am` (amount) from URI to prevent NPCI bank 2k limit blocks & WhatsApp dual-redirects on iOS/Android.
  */
-const buildQuery = ({ upiId, name, amount, note = 'SplitWise Dues' }: UPIPaymentParams): string => {
+const buildCleanQuery = ({ upiId, name, note = 'SplitWise Payment' }: UPIPaymentParams): string => {
   const cleanUpi = upiId.trim();
   const encodedName = encodeURIComponent(name.trim());
   const encodedNote = encodeURIComponent(note.trim());
-  const formattedAmount = amount.toFixed(2);
-  return `pa=${cleanUpi}&pn=${encodedName}&am=${formattedAmount}&cu=INR&tn=${encodedNote}`;
+  return `pa=${cleanUpi}&pn=${encodedName}&cu=INR&tn=${encodedNote}`;
 };
 
 /**
@@ -57,8 +66,8 @@ export const UPI_APPS: UPIAppConfig[] = [
     color: '#1a73e8',
     badgeBg: '#e8f0fe',
     scheme: (params) => {
-      const q = buildQuery(params);
-      return isIOSDevice() ? `tez://upi/pay?${q}` : `gpay://upi/pay?${q}`;
+      const q = buildCleanQuery(params);
+      return isIOSDevice() ? `gpay://upi/pay?${q}` : `gpay://upi/pay?${q}`;
     },
   },
   {
@@ -66,42 +75,42 @@ export const UPI_APPS: UPIAppConfig[] = [
     name: 'PhonePe',
     color: '#5f259f',
     badgeBg: '#f3e8ff',
-    scheme: (params) => `phonepe://pay?${buildQuery(params)}`,
+    scheme: (params) => `phonepe://pay?${buildCleanQuery(params)}`,
   },
   {
     id: 'paytm',
     name: 'Paytm',
     color: '#002e6e',
     badgeBg: '#e6f0ff',
-    scheme: (params) => `paytmmp://pay?${buildQuery(params)}`,
+    scheme: (params) => `paytmmp://pay?${buildCleanQuery(params)}`,
   },
   {
     id: 'mobikwik',
     name: 'MobiKwik Wallet',
     color: '#007aff',
     badgeBg: '#e5f2ff',
-    scheme: (params) => `mobikwik://pay?${buildQuery(params)}`,
+    scheme: (params) => `mobikwik://pay?${buildCleanQuery(params)}`,
   },
   {
     id: 'bhim',
     name: 'BHIM UPI',
     color: '#00529b',
     badgeBg: '#e6f2ff',
-    scheme: (params) => `bhim://pay?${buildQuery(params)}`,
+    scheme: (params) => `bhim://pay?${buildCleanQuery(params)}`,
   },
   {
     id: 'cred',
     name: 'Cred Pay',
     color: '#111111',
     badgeBg: '#f1f5f9',
-    scheme: (params) => `cred://pay?${buildQuery(params)}`,
+    scheme: (params) => `cred://pay?${buildCleanQuery(params)}`,
   },
   {
     id: 'generic',
-    name: 'Any UPI App',
+    name: 'Any Installed UPI App',
     color: '#1677ff',
     badgeBg: '#e6f4ff',
-    scheme: (params) => `upi://pay?${buildQuery(params)}`,
+    scheme: (params) => `upi://pay?${buildCleanQuery(params)}`,
   },
 ];
 
@@ -116,7 +125,7 @@ export const launchAppSpecificUPI = (
   if (!params.upiId) return false;
 
   const appConfig = UPI_APPS.find((a) => a.id === appId) || UPI_APPS[UPI_APPS.length - 1];
-  let uri = appConfig.scheme(params);
+  const uri = appConfig.scheme(params);
 
   if (isMobileDevice()) {
     // Navigate via scheme URL directly
@@ -125,7 +134,7 @@ export const launchAppSpecificUPI = (
     // Secondary fallback to generic upi://pay after a short timeout if specific scheme fails
     if (appId !== 'generic') {
       setTimeout(() => {
-        const fallbackUri = `upi://pay?${buildQuery(params)}`;
+        const fallbackUri = `upi://pay?${buildCleanQuery(params)}`;
         window.location.href = fallbackUri;
       }, 1200);
     }
@@ -143,7 +152,7 @@ export const launchAppSpecificUPI = (
  * Legacy general launcher helper
  */
 export const generateUPIDeepLink = (params: UPIPaymentParams): string => {
-  return `upi://pay?${buildQuery(params)}`;
+  return `upi://pay?${buildCleanQuery(params)}`;
 };
 
 export const launchUPIPayment = (

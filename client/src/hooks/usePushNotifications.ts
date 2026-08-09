@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import api from '../services/api';
 
+import { isCapacitorNative } from '../utils/upiHelper';
+
 interface UsePushNotificationsReturn {
   isSupported: boolean;
   permission: NotificationPermission | 'unsupported';
@@ -12,17 +14,18 @@ interface UsePushNotificationsReturn {
 }
 
 export const usePushNotifications = (): UsePushNotificationsReturn => {
-  const isSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const hasBrowserPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const isSupported = hasBrowserPush || isCapacitorNative();
 
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
-    isSupported ? Notification.permission : 'unsupported'
+    hasBrowserPush ? Notification.permission : isCapacitorNative() ? 'granted' : 'unsupported'
   );
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   // Check existing subscription status on mount
   useEffect(() => {
-    if (!isSupported) return;
+    if (!hasBrowserPush) return;
 
     const checkExistingSubscription = async () => {
       try {
