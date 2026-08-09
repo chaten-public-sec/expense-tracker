@@ -10,23 +10,17 @@ const http = require('http');
 const dotenv = require('dotenv');
 
 
-// 1. Initialize dotenv at the VERY TOP before any other module imports
+// 1. Initialize dotenv at the top (silently falls back to process.env if no .env file on cloud hosts)
 const envPath = path.resolve(__dirname, '.env');
-const dotenvResult = dotenv.config({ path: envPath });
+dotenv.config({ path: envPath });
 
-if (dotenvResult.error) {
-  console.warn(`[dotenv] Warning loading .env file from ${envPath}:`, dotenvResult.error.message);
-} else {
-  console.log(`📂 [dotenv] Loaded environment file from: ${envPath}`);
-}
-
-// 2. Validate essential environment variable - STRICTLY process.env.MONGODB_URI ONLY
+// 2. Validate essential environment variable - MONGODB_URI
 const mongoUri = process.env.MONGODB_URI;
 
 if (!mongoUri || typeof mongoUri !== 'string' || !mongoUri.trim()) {
   console.error('\n==================================================');
-  console.error('❌ Missing Environment Variable: MONGODB_URI is undefined or empty');
-  console.error(`Please define MONGODB_URI in ${envPath}`);
+  console.error('❌ Missing Environment Variable: MONGODB_URI');
+  console.error('👉 If deploying on Render: Go to Render Dashboard -> Environment -> Add Environment Variable -> MONGODB_URI');
   console.error('==================================================\n');
   process.exit(1);
 }

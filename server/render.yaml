@@ -22,3 +22,9 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CONTACT_EMAIL
+        value: mailto:kumarpuspender4276@gmail.com
