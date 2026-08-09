@@ -68,7 +68,9 @@ const devOrigins = [
   'http://localhost:3001',
   'http://localhost:3002',
   'http://127.0.0.1:5173',
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  "http://localhost",
+  "https://splitwise.puspender.in"
 ];
 
 const allowedOrigins = isDev
@@ -177,7 +179,7 @@ const startServer = async () => {
   // Initialize Socket.IO on the HTTP server
   socketManager.init(httpServer, corsOptions);
 
-const { startKeepAlive } = require('./utils/keepAlive');
+  const { startKeepAlive } = require('./utils/keepAlive');
 
   httpServer.listen(PORT, () => {
     console.log(`🚀 [Express] Server running on port ${PORT} [Mode: ${process.env.NODE_ENV || 'development'}]`);
