@@ -50,11 +50,16 @@ const sendFCMNotification = async (fcmTokens, payload) => {
         sent++;
       } else {
         failed++;
-        console.warn(`[FCM Push Warning] Error sending to token ${token.substring(0, 10)}...:`, response.data);
+        console.warn(`[FCM Push Warning] Error sending to token ${token.substring(0, 8)}...:`, response.data);
+        if (response.data?.results?.[0]?.error === 'NotRegistered' || response.data?.results?.[0]?.error === 'InvalidRegistration') {
+          const PushSubscription = require('../models/PushSubscription');
+          console.log(`📱 [FCM Cleanup] Removing stale FCM token ${token.substring(0, 8)}...`);
+          await PushSubscription.deleteOne({ fcmToken: token });
+        }
       }
     } catch (err) {
       failed++;
-      console.error(`[FCM Push Error] Failed for token ${token.substring(0, 10)}...:`, err.message);
+      console.error(`[FCM Push Error] Failed for token ${token.substring(0, 8)}...:`, err.message);
     }
   }
 
