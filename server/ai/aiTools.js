@@ -137,15 +137,24 @@ const executeTool = async (toolName, args = {}, context) => {
 
   switch (toolName) {
     case 'get_group_members': {
+      const Group = require('../models/Group');
+      const groupObj = await Group.findById(groupId).select('name');
       const members = await GroupMember.find({ groupId }).populate('userId', 'fullName email phone');
+      
       const memberList = members
-        .map(m => m.userId ? { id: m.userId._id.toString(), name: m.userId.fullName, email: m.userId.email } : null)
+        .map(m => m.userId ? { userId: m.userId._id.toString(), name: m.userId.fullName, email: m.userId.email } : null)
         .filter(Boolean);
+
+      if (memberList.length !== members.length) {
+        console.warn(`[Data Integrity Warning] Member count mismatch in group ${groupId}: DB records=${members.length}, populated=${memberList.length}`);
+      }
 
       return {
         groupId,
+        groupName: groupObj?.name || 'Flatmates',
         memberCount: memberList.length,
-        members: memberList.map(m => m.name),
+        members: memberList.map(m => ({ userId: m.userId, name: m.name })),
+        memberNames: memberList.map(m => m.name),
         memberDetails: memberList,
       };
     }

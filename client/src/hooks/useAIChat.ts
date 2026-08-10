@@ -26,6 +26,21 @@ export const useAIChat = () => {
   });
 
   const activeMessageIdRef = useRef<string | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
+
+  // Helper to clear terminal states
+  const clearTerminalState = useCallback(() => {
+    setIsThinking(false);
+    setIsStreaming(false);
+    setCurrentToolStatus(null);
+    if (activeMessageIdRef.current) {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === activeMessageIdRef.current ? { ...msg, toolStatus: null } : msg
+        )
+      );
+    }
+  }, []);
 
   // Initialize or resume AI Chat session with Socket.IO
   useEffect(() => {
@@ -39,28 +54,20 @@ export const useAIChat = () => {
       sessionStorage.setItem(SESSION_STORAGE_KEY, data.sessionId);
     };
 
-    const handleThinking = () => {
+    const handleThinking = (data: { requestId?: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return; // Ignore stale request event
+      }
       setIsThinking(true);
       setIsStreaming(false);
       setCurrentToolStatus(null);
       setError(null);
-
-      // Create placeholder assistant message
-      const msgId = `ai_msg_${Date.now()}`;
-      activeMessageIdRef.current = msgId;
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: msgId,
-          role: 'assistant',
-          text: '',
-          timestamp: new Date(),
-        },
-      ]);
     };
 
-    const handleToolStart = (data: { toolName: string; friendlyLabel: string }) => {
+    const handleToolStart = (data: { requestId?: string; toolName: string; friendlyLabel: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
       setCurrentToolStatus(data.friendlyLabel);
       if (activeMessageIdRef.current) {
         setMessages((prev) =>
@@ -73,7 +80,10 @@ export const useAIChat = () => {
       }
     };
 
-    const handleToolComplete = () => {
+    const handleToolComplete = (data: { requestId?: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
       setCurrentToolStatus(null);
       if (activeMessageIdRef.current) {
         setMessages((prev) =>
@@ -84,7 +94,10 @@ export const useAIChat = () => {
       }
     };
 
-    const handleToken = (data: { token: string }) => {
+    const handleToken = (data: { requestId?: string; token: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
       setIsThinking(false);
       setIsStreaming(true);
       setCurrentToolStatus(null);
@@ -100,10 +113,11 @@ export const useAIChat = () => {
       }
     };
 
-    const handleComplete = (data: { fullText: string }) => {
-      setIsThinking(false);
-      setIsStreaming(false);
-      setCurrentToolStatus(null);
+    const handleComplete = (data: { requestId?: string; fullText: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
+      clearTerminalState();
 
       if (activeMessageIdRef.current) {
         setMessages((prev) =>
@@ -115,26 +129,23 @@ export const useAIChat = () => {
         );
       }
       activeMessageIdRef.current = null;
+      activeRequestIdRef.current = null;
     };
 
-    const handleStopped = () => {
-      setIsThinking(false);
-      setIsStreaming(false);
-      setCurrentToolStatus(null);
-      if (activeMessageIdRef.current) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === activeMessageIdRef.current ? { ...msg, toolStatus: null } : msg
-          )
-        );
+    const handleStopped = (data?: { requestId?: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
       }
+      clearTerminalState();
       activeMessageIdRef.current = null;
+      activeRequestIdRef.current = null;
     };
 
-    const handleError = (data: { message: string }) => {
-      setIsThinking(false);
-      setIsStreaming(false);
-      setCurrentToolStatus(null);
+    const handleError = (data: { requestId?: string; message: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
+      clearTerminalState();
       setError(data.message || 'An error occurred.');
 
       if (activeMessageIdRef.current) {
@@ -151,6 +162,32 @@ export const useAIChat = () => {
         );
       }
       activeMessageIdRef.current = null;
+      activeRequestIdRef.current = null;
+    };
+
+    const handleTimeout = (data: { requestId?: string; message: string }) => {
+      if (data?.requestId && activeRequestIdRef.current && data.requestId !== activeRequestIdRef.current) {
+        return;
+      }
+      clearTerminalState();
+      const timeoutMsg = data.message || 'AI request timed out. Please try again.';
+      setError(timeoutMsg);
+
+      if (activeMessageIdRef.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === activeMessageIdRef.current
+              ? {
+                  ...msg,
+                  text: msg.text || timeoutMsg,
+                  toolStatus: null,
+                }
+              : msg
+          )
+        );
+      }
+      activeMessageIdRef.current = null;
+      activeRequestIdRef.current = null;
     };
 
     socket.on('ai:chat:ready', handleReady);
@@ -161,6 +198,7 @@ export const useAIChat = () => {
     socket.on('ai:chat:message:complete', handleComplete);
     socket.on('ai:chat:stopped', handleStopped);
     socket.on('ai:chat:error', handleError);
+    socket.on('ai:chat:timeout', handleTimeout);
 
     return () => {
       socket.off('ai:chat:ready', handleReady);
@@ -171,12 +209,19 @@ export const useAIChat = () => {
       socket.off('ai:chat:message:complete', handleComplete);
       socket.off('ai:chat:stopped', handleStopped);
       socket.off('ai:chat:error', handleError);
+      socket.off('ai:chat:timeout', handleTimeout);
     };
-  }, [socket, user]);
+  }, [socket, user, clearTerminalState]);
 
   const sendMessage = useCallback(
     (text: string) => {
       if (!text.trim() || !socket || isThinking || isStreaming) return;
+
+      const reqId = `ai_req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      const assistantMsgId = `ai_msg_${Date.now()}`;
+
+      activeRequestIdRef.current = reqId;
+      activeMessageIdRef.current = assistantMsgId;
 
       const userMsg: ChatMessage = {
         id: `user_msg_${Date.now()}`,
@@ -185,11 +230,20 @@ export const useAIChat = () => {
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, userMsg]);
+      const assistantMsg: ChatMessage = {
+        id: assistantMsgId,
+        role: 'assistant',
+        text: '',
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
       setError(null);
+      setIsThinking(true);
 
       socket.emit('ai:chat:message', {
         sessionId,
+        requestId: reqId,
         text: text.trim(),
       });
     },
@@ -198,11 +252,11 @@ export const useAIChat = () => {
 
   const stopGeneration = useCallback(() => {
     if (!socket || !sessionId) return;
-    socket.emit('ai:chat:stop', { sessionId });
-    setIsThinking(false);
-    setIsStreaming(false);
-    setCurrentToolStatus(null);
-  }, [socket, sessionId]);
+    socket.emit('ai:chat:stop', { sessionId, requestId: activeRequestIdRef.current });
+    clearTerminalState();
+    activeMessageIdRef.current = null;
+    activeRequestIdRef.current = null;
+  }, [socket, sessionId, clearTerminalState]);
 
   const startNewChat = useCallback(() => {
     if (socket && sessionId) {
@@ -210,12 +264,11 @@ export const useAIChat = () => {
     }
     setMessages([]);
     setError(null);
-    setIsThinking(false);
-    setIsStreaming(false);
-    setCurrentToolStatus(null);
+    clearTerminalState();
     activeMessageIdRef.current = null;
+    activeRequestIdRef.current = null;
     sessionStorage.removeItem(SESSION_STORAGE_KEY);
-  }, [socket, sessionId]);
+  }, [socket, sessionId, clearTerminalState]);
 
   return {
     messages,
