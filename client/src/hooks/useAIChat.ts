@@ -75,6 +75,13 @@ export const useAIChat = () => {
 
     const handleToolComplete = () => {
       setCurrentToolStatus(null);
+      if (activeMessageIdRef.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === activeMessageIdRef.current ? { ...msg, toolStatus: null } : msg
+          )
+        );
+      }
     };
 
     const handleToken = (data: { token: string }) => {
@@ -114,6 +121,13 @@ export const useAIChat = () => {
       setIsThinking(false);
       setIsStreaming(false);
       setCurrentToolStatus(null);
+      if (activeMessageIdRef.current) {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === activeMessageIdRef.current ? { ...msg, toolStatus: null } : msg
+          )
+        );
+      }
       activeMessageIdRef.current = null;
     };
 

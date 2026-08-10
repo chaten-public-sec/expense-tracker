@@ -88,6 +88,14 @@ const aiToolDeclarations = [
     },
   },
   {
+    name: 'get_group_members',
+    description: 'Retrieves the official, canonical list of all members in the current active group, including their full display names, user IDs, and emails. Must be called for any question about who is in the group, member count, or member names.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
+    },
+  },
+  {
     name: 'get_group_financial_summary',
     description: 'Retrieves group-wide financial metrics: total group spending, highest payer, member count, and active members.',
     parameters: {
@@ -97,7 +105,7 @@ const aiToolDeclarations = [
   },
   {
     name: 'semantic_expense_search',
-    description: 'Performs semantic AI search for specific activities, items, food, bills, or contextual memories (e.g. "dinner after movie", "groceries", "WiFi bill", "pizza party", "biggest expense").',
+    description: 'Performs semantic vector AI search using Pinecone for specific activities, items, food, bills, or contextual memories (e.g. "dinner after movie", "food expenses", "groceries", "WiFi bill", "pizza party", "biggest expense").',
     parameters: {
       type: 'OBJECT',
       properties: {
@@ -128,6 +136,20 @@ const executeTool = async (toolName, args = {}, context) => {
   }
 
   switch (toolName) {
+    case 'get_group_members': {
+      const members = await GroupMember.find({ groupId }).populate('userId', 'fullName email phone');
+      const memberList = members
+        .map(m => m.userId ? { id: m.userId._id.toString(), name: m.userId.fullName, email: m.userId.email } : null)
+        .filter(Boolean);
+
+      return {
+        groupId,
+        memberCount: memberList.length,
+        members: memberList.map(m => m.name),
+        memberDetails: memberList,
+      };
+    }
+
     case 'get_current_balances': {
       const balanceData = await calculateGroupBalances(groupId, userId);
       const summary = balanceData.currentUserSummary;
@@ -395,6 +417,7 @@ const executeTool = async (toolName, args = {}, context) => {
 
 const getFriendlyToolLabel = (toolName) => {
   switch (toolName) {
+    case 'get_group_members': return 'Fetching official group member list...';
     case 'get_current_balances': return 'Calculating your live balances...';
     case 'get_balance_with_person': return 'Checking dues with flatmate...';
     case 'get_user_expense_summary': return 'Analyzing your spending history...';

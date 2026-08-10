@@ -7,21 +7,27 @@ const pushSubscriptionSchema = new mongoose.Schema({
     required: true,
     index: true,
   },
+  platform: {
+    type: String,
+    enum: ['web', 'android', 'ios'],
+    default: 'web',
+  },
+  // Web Push Subscription object
   subscription: {
-    endpoint: {
-      type: String,
-      required: true,
-    },
+    endpoint: String,
     keys: {
-      p256dh: {
-        type: String,
-        required: true,
-      },
-      auth: {
-        type: String,
-        required: true,
-      },
+      p256dh: String,
+      auth: String,
     },
+  },
+  // Android / Mobile FCM Registration Token
+  fcmToken: {
+    type: String,
+    index: true,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
   },
   createdAt: {
     type: Date,
@@ -29,7 +35,7 @@ const pushSubscriptionSchema = new mongoose.Schema({
   },
 });
 
-// Ensure a user can't register the same endpoint twice
-pushSubscriptionSchema.index({ userId: 1, 'subscription.endpoint': 1 }, { unique: true });
+pushSubscriptionSchema.index({ userId: 1, 'subscription.endpoint': 1 });
+pushSubscriptionSchema.index({ userId: 1, fcmToken: 1 });
 
 module.exports = mongoose.model('PushSubscription', pushSubscriptionSchema);

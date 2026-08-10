@@ -73,4 +73,54 @@ router.post('/unsubscribe', protect, async (req, res) => {
   }
 });
 
+// @desc Register Android FCM device token for authenticated user
+// @route POST /api/notifications/register-fcm
+router.post('/register-fcm', protect, async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    if (!fcmToken || typeof fcmToken !== 'string') {
+      return res.status(400).json({ message: 'FCM token is required' });
+    }
+
+    await PushSubscription.findOneAndUpdate(
+      {
+        userId: req.user._id,
+        fcmToken: fcmToken.trim(),
+      },
+      {
+        userId: req.user._id,
+        platform: 'android',
+        fcmToken: fcmToken.trim(),
+        updatedAt: new Date(),
+      },
+      { upsert: true, new: true }
+    );
+
+    const tokenHash = `${fcmToken.substring(0, 8)}...${fcmToken.substring(fcmToken.length - 6)}`;
+    console.log(`📱 [FCM Register] Registered token (${tokenHash}) for user ${req.user.fullName}`);
+    return res.json({ message: 'FCM token registered successfully' });
+  } catch (err) {
+    console.error('[FCM Register Error]:', err);
+    return res.status(500).json({ message: 'Failed to register FCM token' });
+  }
+});
+
+// @desc Dev/Admin test push notification endpoint
+// @route POST /api/notifications/test-push
+router.post('/test-push', protect, async (req, res) => {
+  try {
+    const { sendPushToUser } = require('../services/pushService');
+    await sendPushToUser(req.user._id, {
+      title: 'SplitWise Test Alert',
+      body: `Hello ${req.user.fullName}! Push notifications are working on SplitWise.`,
+      data: { type: 'test', timestamp: new Date().toISOString() },
+    });
+
+    return res.json({ message: 'Test notification triggered successfully' });
+  } catch (err) {
+    console.error('[Test Push Error]:', err);
+    return res.status(500).json({ message: 'Failed to send test push' });
+  }
+});
+
 module.exports = router;

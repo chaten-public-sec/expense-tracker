@@ -25,7 +25,14 @@ const getOrCreateSession = (sessionId, userId, groupId, userName) => {
       return null;
     }
     session.lastActivityAt = Date.now();
-    if (groupId) session.groupId = groupId.toString();
+    if (groupId) {
+      const newGid = groupId.toString();
+      if (session.groupId && session.groupId !== newGid) {
+        console.log(`[AI Session] User active group changed from ${session.groupId} to ${newGid}. Clearing stale conversation memory.`);
+        session.messages = [];
+      }
+      session.groupId = newGid;
+    }
     if (userName) session.userName = userName;
   } else {
     session = {
