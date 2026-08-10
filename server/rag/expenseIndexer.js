@@ -124,18 +124,22 @@ const deleteExpenseIndexAsync = async (expenseId, userIds = []) => {
 };
 
 /**
- * Reindexes all expenses for a group (Development / Administrative maintenance helper).
+ * Reindexes all expenses across all groups into Pinecone.
  */
-const reindexGroupExpenses = async (groupId) => {
+const reindexAllExpenses = async () => {
   try {
-    const expenses = await Expense.find({ groupId }).select('_id');
-    console.log(`🌲 [Pinecone Reindex] Starting reindex for ${expenses.length} group expenses...`);
+    const expenses = await Expense.find({}).select('_id');
+    console.log(`🌲 [Pinecone Reindex All] Starting reindex for ${expenses.length} total MongoDB expenses...`);
+    let count = 0;
     for (const exp of expenses) {
       await indexExpenseAsync(exp._id);
+      count++;
     }
-    console.log(`🌲 [Pinecone Reindex] Completed reindex for group ${groupId}.`);
+    console.log(`🌲 [Pinecone Reindex All] Successfully reindexed ${count} expenses into Pinecone.`);
+    return { success: true, count };
   } catch (err) {
-    console.error('[Pinecone Reindex Error]:', err.message);
+    console.error('[Pinecone Reindex All Error]:', err.message);
+    return { success: false, error: err.message };
   }
 };
 
@@ -143,4 +147,5 @@ module.exports = {
   indexExpenseAsync,
   deleteExpenseIndexAsync,
   reindexGroupExpenses,
+  reindexAllExpenses,
 };

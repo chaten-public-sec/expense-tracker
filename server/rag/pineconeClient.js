@@ -51,8 +51,38 @@ const getUserNamespace = (userId) => {
   return `user_${userId.toString()}`;
 };
 
+/**
+ * Backend-only diagnostic to check Pinecone connectivity and index state.
+ */
+const checkPineconeHealth = async () => {
+  if (!isPineconeConfigured()) {
+    return { isConfigured: false, ready: false, message: 'Pinecone credentials missing in env.' };
+  }
+
+  try {
+    const index = getPineconeIndex();
+    if (!index) {
+      return { isConfigured: true, ready: false, message: 'Failed to initialize Pinecone index client.' };
+    }
+
+    const stats = await index.describeIndexStats();
+    return {
+      isConfigured: true,
+      ready: true,
+      indexName: process.env.PINECONE_INDEX_NAME.trim(),
+      totalRecordCount: stats.totalRecordCount || 0,
+      namespaces: stats.namespaces || {},
+      dimension: stats.dimension || null,
+    };
+  } catch (err) {
+    console.error('🌲 [Pinecone Health Check Failed]:', err.message);
+    return { isConfigured: true, ready: false, error: err.message };
+  }
+};
+
 module.exports = {
   isPineconeConfigured,
   getPineconeIndex,
   getUserNamespace,
+  checkPineconeHealth,
 };

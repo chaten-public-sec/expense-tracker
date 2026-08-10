@@ -43,6 +43,21 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
     }
   };
 
+  const stopScannerSafely = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop();
+        }
+        html5QrCodeRef.current.clear();
+      } catch (err) {
+        // Ignore stop error
+      } finally {
+        html5QrCodeRef.current = null;
+      }
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -52,14 +67,26 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
     const qrElementId = 'splitwise-qr-camera-view';
 
-    // Delay slightly to ensure DOM element is mounted
     const timer = setTimeout(async () => {
       try {
+        // Ensure web / native media devices API is available
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera streaming is not supported on this browser or platform device.');
+        }
+
         const html5QrCode = new Html5Qrcode(qrElementId);
         html5QrCodeRef.current = html5QrCode;
 
+        // Try getting cameras first to trigger permission dialog cleanly
+        const devices = await Html5Qrcode.getCameras().catch(() => []);
+        const backCamera = devices.find(
+          (d) => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('rear') || d.label.toLowerCase().includes('environment')
+        ) || devices[0];
+
+        const cameraConfig = backCamera ? backCamera.id : { facingMode: 'environment' };
+
         await html5QrCode.start(
-          { facingMode: 'environment' },
+          cameraConfig,
           {
             fps: 10,
             qrbox: { width: 250, height: 250 },
@@ -71,61 +98,49 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
 
             const token = parseScannedData(decodedText);
 
-            // Stop scanner & emit
-            html5QrCode
-              .stop()
-              .then(() => {
-                onScanSuccess(token);
-                onClose();
-              })
-              .catch(() => {
-                onScanSuccess(token);
-                onClose();
-              });
+            stopScannerSafely().then(() => {
+              onScanSuccess(token);
+              onClose();
+            });
           },
           () => {
-            // Frame error (ignore normal frame misses)
+            // Ignore normal frame scan misses
           }
         );
 
         setIsInitializing(false);
       } catch (err: any) {
-        console.error('Camera Init Error:', err);
+        console.error('[QR Scanner Error]:', err);
         setIsInitializing(false);
         setCameraError(
-          err.message || 'Camera permission denied or camera unavailable. Please check your browser/app permissions.'
+          err.message || 'Camera permission denied or camera unavailable. Please grant camera permission or use code input.'
         );
       }
     }, 300);
 
     return () => {
       clearTimeout(timer);
-      if (html5QrCodeRef.current) {
-        try {
-          html5QrCodeRef.current
-            .stop()
-            .then(() => {
-              html5QrCodeRef.current?.clear();
-            })
-            .catch(() => {
-              html5QrCodeRef.current?.clear();
-            });
-        } catch {
-          // ignore cleanup error
-        }
-      }
+      stopScannerSafely();
     };
   }, [isOpen]);
 
   const handleManualCodeClick = () => {
-    onClose();
-    onSwitchToCodeInput();
+    stopScannerSafely().then(() => {
+      onClose();
+      onSwitchToCodeInput();
+    });
+  };
+
+  const handleModalClose = () => {
+    stopScannerSafely().then(() => {
+      onClose();
+    });
   };
 
   return (
     <Modal
       open={isOpen}
-      onCancel={onClose}
+      onCancel={handleModalClose}
       title={
         <Space align="center">
           <CameraOutlined style={{ color: '#2563eb' }} />
@@ -136,7 +151,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
         <Button key="manual" icon={<EditOutlined />} onClick={handleManualCodeClick}>
           Enter Code Instead
         </Button>,
-        <Button key="close" onClick={onClose}>
+        <Button key="close" onClick={handleModalClose}>
           Cancel
         </Button>,
       ]}

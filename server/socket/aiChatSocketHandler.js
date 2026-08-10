@@ -37,16 +37,18 @@ const registerAIChatHandlers = (socket) => {
 
   // 2. Incoming chat message
   socket.on('ai:chat:message', async (data = {}) => {
+    const requestId = data.requestId || `ai_req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     try {
       const { sessionId, text } = data;
 
       if (!text || !text.trim()) {
-        return socket.emit('ai:chat:error', { message: 'Message text cannot be empty.' });
+        return socket.emit('ai:chat:error', { requestId, message: 'Message text cannot be empty.' });
       }
 
       // Check Super Admin exclusion
       if (user.isSuperAdmin || user.email === 'admin@gmail.com') {
         return socket.emit('ai:chat:error', {
+          requestId,
           message: 'Super Admin accounts manage the platform globally and do not have personal group expense balances.',
         });
       }
@@ -59,6 +61,7 @@ const registerAIChatHandlers = (socket) => {
 
       if (userQueryTimestamps.length >= MAX_QUERIES_PER_MINUTE) {
         return socket.emit('ai:chat:error', {
+          requestId,
           message: 'Rate limit exceeded. Please wait a moment before sending another query.',
         });
       }
@@ -66,31 +69,36 @@ const registerAIChatHandlers = (socket) => {
       userQueryTimestamps.push(now);
 
       // Notify frontend that AI started thinking
-      socket.emit('ai:chat:thinking');
+      socket.emit('ai:chat:thinking', { requestId });
 
       await processAIStreamQuery({
         sessionId,
+        requestId,
         user,
         userPrompt: text.trim(),
         onToolStart: (toolName, friendlyLabel) => {
-          socket.emit('ai:chat:tool:start', { toolName, friendlyLabel });
+          socket.emit('ai:chat:tool:start', { requestId, toolName, friendlyLabel });
         },
         onToolComplete: (toolName) => {
-          socket.emit('ai:chat:tool:complete', { toolName });
+          socket.emit('ai:chat:tool:complete', { requestId, toolName });
         },
         onToken: (token) => {
-          socket.emit('ai:chat:token', { token });
+          socket.emit('ai:chat:token', { requestId, token });
         },
         onComplete: ({ fullText }) => {
-          socket.emit('ai:chat:message:complete', { fullText });
+          socket.emit('ai:chat:message:complete', { requestId, fullText });
         },
         onError: (errMsg) => {
-          socket.emit('ai:chat:error', { message: errMsg });
+          if (errMsg && errMsg.includes('timed out')) {
+            socket.emit('ai:chat:timeout', { requestId, message: 'AI response timed out. Please try again.' });
+          } else {
+            socket.emit('ai:chat:error', { requestId, message: errMsg || 'An error occurred while generating response.' });
+          }
         },
       });
     } catch (err) {
       console.error('[Socket AI Message Error]:', err);
-      socket.emit('ai:chat:error', { message: 'An error occurred while generating response.' });
+      socket.emit('ai:chat:error', { requestId, message: 'An error occurred while generating response.' });
     }
   });
 
