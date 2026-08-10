@@ -22,6 +22,7 @@ import { DesktopSidebar } from './components/layout/DesktopSidebar';
 
 import { AIChatButton } from './components/ai/AIChatButton';
 import { AIChatDrawer } from './components/ai/AIChatDrawer';
+import { notifyAppReady, checkForLiveUpdate, applyLiveUpdate } from './utils/appUpdate';
 
 const PageLoader: React.FC = () => (
   <div
@@ -105,6 +106,31 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
 };
 
 export const App: React.FC = () => {
+  React.useEffect(() => {
+    // 1. Confirm bundle boot to CapacitorUpdater (prevents rollback)
+    notifyAppReady();
+
+    // 2. Non-blocking background update check
+    const performBackgroundCheck = async () => {
+      try {
+        const result = await checkForLiveUpdate();
+        if (result.hasUpdate && result.manifest) {
+          console.log('[LiveUpdate] Compatible web bundle update found! Downloading...');
+          const success = await applyLiveUpdate(result.manifest);
+          if (success) {
+            console.log('[LiveUpdate] Web update prepared. Will apply on next restart.');
+          }
+        } else if (result.requiresNativeUpdate) {
+          console.warn('[LiveUpdate] A new native SplitWise app version is required.');
+        }
+      } catch (err) {
+        console.warn('[LiveUpdate] Background check error:', err);
+      }
+    };
+
+    performBackgroundCheck();
+  }, []);
+
   return (
     <ErrorBoundary>
       <ConfigProvider
