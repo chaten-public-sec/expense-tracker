@@ -3,6 +3,18 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const PushSubscription = require('../models/PushSubscription');
 const { getVapidPublicKey } = require('../services/pushService');
+const {
+  getUserNotifications,
+  getUnreadCount,
+  markAsRead,
+  markAllAsRead,
+} = require('../controllers/notificationController');
+
+// Persistent Application Notification Inbox Routes
+router.get('/', protect, getUserNotifications);
+router.get('/unread-count', protect, getUnreadCount);
+router.patch('/:id/read', protect, markAsRead);
+router.patch('/read-all', protect, markAllAsRead);
 
 // @desc Get VAPID public key for client-side subscription
 // @route GET /api/notifications/vapid-key

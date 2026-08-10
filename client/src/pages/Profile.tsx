@@ -41,7 +41,7 @@ import { useToast } from '../components/ui/Toast';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { QRImageEditorModal } from '../components/modals/QRImageEditorModal';
 import { isNativePlatform, APP_VERSION, DOWNLOAD_URL, DownloadAppButton } from '../components/common/DownloadAppModal';
-import { checkForLiveUpdate, applyLiveUpdate } from '../utils/appUpdate';
+import { checkForLiveUpdate, applyLiveUpdate, getAppVersionInfo } from '../utils/appUpdate';
 import api from '../services/api';
 
 const { Title, Text } = Typography;
@@ -82,6 +82,15 @@ export const Profile: React.FC = () => {
   const [isSavingPayday, setIsSavingPayday] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [activeWebVersion, setActiveWebVersion] = useState<string>(APP_VERSION);
+  const [activeNativeVersion, setActiveNativeVersion] = useState<string>('1.0.0');
+
+  useEffect(() => {
+    getAppVersionInfo().then((info) => {
+      setActiveWebVersion(info.webVersion);
+      setActiveNativeVersion(info.nativeVersion);
+    });
+  }, []);
 
   const handleCheckUpdate = async () => {
     try {
@@ -485,7 +494,7 @@ export const Profile: React.FC = () => {
               SplitWise Pro {isNativePlatform() ? '(Android Native)' : '(Web)'}
             </Title>
             <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
-              Version {APP_VERSION} · Shared Expense Manager
+              Web Bundle v{activeWebVersion} · Native v{activeNativeVersion}
             </Text>
           </div>
 

@@ -176,12 +176,32 @@ app.get(['/ping', '/api/ping'], (req, res) => {
 });
 
 // Live Update Manifest endpoint for Capacitor Android app
-app.get(['/api/app/update-manifest', '/app/update-manifest'], (req, res) => {
+app.get(['/api/app/update-manifest', '/app/update-manifest'], async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.status(200).json({
+
+  try {
+    const remoteManifestUrl = process.env.LIVE_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/puspendeerrr/expense-tracker/main/update-manifest.json';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+    const fetchRes = await fetch(remoteManifestUrl, {
+      signal: controller.signal,
+      headers: { 'Cache-Control': 'no-cache' },
+    }).catch(() => null);
+    clearTimeout(timeoutId);
+
+    if (fetchRes && fetchRes.ok) {
+      const manifestData = await fetchRes.json();
+      return res.status(200).json(manifestData);
+    }
+  } catch (err) {
+    console.warn('[LiveUpdate Proxy Warning]: Could not fetch remote manifest, serving environment fallback:', err.message);
+  }
+
+  return res.status(200).json({
     version: process.env.LIVE_UPDATE_VERSION || '1.0.0',
     minNativeVersion: process.env.LIVE_UPDATE_MIN_NATIVE_VERSION || '1.0.0',
-    url: process.env.LIVE_UPDATE_BUNDLE_URL || '',
+    url: process.env.LIVE_UPDATE_BUNDLE_URL || 'https://github.com/puspendeerrr/expense-tracker/releases/latest/download/web-bundle.zip',
     downloadUrl: process.env.ANDROID_DOWNLOAD_URL || 'https://github.com/puspendeerrr/expense-tracker/releases/latest/download/SplitWise.apk',
     releaseNotes: 'SplitWise production web bundle',
     channel: 'production',
