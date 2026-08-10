@@ -34,11 +34,14 @@ import {
   SettingOutlined,
   CheckCircleOutlined,
   LogoutOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { QRImageEditorModal } from '../components/modals/QRImageEditorModal';
+import { isNativePlatform, APP_VERSION, DOWNLOAD_URL, DownloadAppButton } from '../components/common/DownloadAppModal';
+import { checkForLiveUpdate, applyLiveUpdate } from '../utils/appUpdate';
 import api from '../services/api';
 
 const { Title, Text } = Typography;
@@ -78,6 +81,31 @@ export const Profile: React.FC = () => {
   const [paydayValue, setPaydayValue] = useState<number | null>(group?.payday || null);
   const [isSavingPayday, setIsSavingPayday] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const handleCheckUpdate = async () => {
+    try {
+      setIsCheckingUpdate(true);
+      const result = await checkForLiveUpdate();
+      if (result.hasUpdate && result.manifest) {
+        showSuccess('Update available! Downloading web update...');
+        const ok = await applyLiveUpdate(result.manifest);
+        if (ok) {
+          showSuccess('SplitWise updated successfully! Restart the app to apply.');
+        } else {
+          showError('Failed to apply live update.');
+        }
+      } else if (result.requiresNativeUpdate) {
+        showError('A new native app version is required. Please download the latest APK.');
+      } else {
+        showSuccess('SplitWise is already up to date!');
+      }
+    } catch (err: any) {
+      showError('Failed to check for updates');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const copyCode = () => {
     if (group?.inviteCode) {
@@ -439,6 +467,47 @@ export const Profile: React.FC = () => {
           </Card>
         )
       )}
+
+      {/* About SplitWise & Application Version Card */}
+      <Card
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SettingOutlined style={{ color: '#2563eb' }} />
+            <span>About SplitWise</span>
+          </div>
+        }
+        style={{ borderRadius: 14, marginTop: 16 }}
+        styles={{ body: { padding: 18 } }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <Title level={5} style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+              SplitWise Pro {isNativePlatform() ? '(Android Native)' : '(Web)'}
+            </Title>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 2 }}>
+              Version {APP_VERSION} · Shared Expense Manager
+            </Text>
+          </div>
+
+          <div>
+            {isNativePlatform() ? (
+              <Button
+                type="primary"
+                ghost
+                size="middle"
+                icon={<ReloadOutlined spin={isCheckingUpdate} />}
+                loading={isCheckingUpdate}
+                onClick={handleCheckUpdate}
+                style={{ borderRadius: 10, borderColor: '#2563eb', color: '#2563eb' }}
+              >
+                Check for Updates
+              </Button>
+            ) : (
+              <DownloadAppButton size="middle" />
+            )}
+          </div>
+        </div>
+      </Card>
 
       {/* Edit Profile Modal */}
       <Modal

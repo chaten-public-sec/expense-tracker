@@ -175,6 +175,20 @@ app.get(['/ping', '/api/ping'], (req, res) => {
   res.status(200).send('pong');
 });
 
+// Live Update Manifest endpoint for Capacitor Android app
+app.get(['/api/app/update-manifest', '/app/update-manifest'], (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.status(200).json({
+    version: process.env.LIVE_UPDATE_VERSION || '1.0.0',
+    minNativeVersion: process.env.LIVE_UPDATE_MIN_NATIVE_VERSION || '1.0.0',
+    url: process.env.LIVE_UPDATE_BUNDLE_URL || '',
+    downloadUrl: process.env.ANDROID_DOWNLOAD_URL || 'https://github.com/chaten-public-sec/expense-tracker/releases/latest/download/SplitWise.apk',
+    releaseNotes: 'SplitWise production web bundle',
+    channel: 'production',
+    updatedAt: new Date().toISOString(),
+  });
+});
+
 // Production Error handling middleware
 app.use((err, req, res, next) => {
   console.error('[Error Middleware]:', err.stack);

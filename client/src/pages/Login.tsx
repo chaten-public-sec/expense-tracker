@@ -18,6 +18,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
+import { DownloadAppButton } from '../components/common/DownloadAppModal';
 import api from '../services/api';
 
 const { Title, Text } = Typography;
@@ -185,6 +186,11 @@ export const Login: React.FC = () => {
             </Text>
           </div>
         </Card>
+
+        {/* Public Download App CTA Banner */}
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <DownloadAppButton style={{ width: '100%', height: 42 }} />
+        </div>
       </div>
     </div>
   );
