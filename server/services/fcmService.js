@@ -11,7 +11,6 @@ const sendFCMNotification = async (fcmTokens, payload) => {
   const fcmServerKey = process.env.FCM_SERVER_KEY || process.env.FIREBASE_SERVER_KEY;
 
   if (!fcmServerKey) {
-    // Log safe token diagnostic hash for verification
     const tokenHashes = fcmTokens.map(t => `${t.substring(0, 8)}...${t.substring(t.length - 6)}`);
     console.log(`📱 [FCM Notification Ready] FCM Server Key missing in env, payload queued for tokens: ${tokenHashes.join(', ')}`);
     console.log(`📱 [FCM Notification Payload]: Title="${payload.title}", Body="${payload.body}"`);
@@ -28,12 +27,14 @@ const sendFCMNotification = async (fcmTokens, payload) => {
         {
           to: token,
           priority: 'high',
+          content_available: true,
           notification: {
             title: payload.title || 'SplitWise',
             body: payload.body || '',
-            icon: 'ic_notification',
+            icon: 'ic_launcher',
             color: '#2563eb',
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
+            android_channel_id: 'splitwise_notifications',
+            sound: 'default',
           },
           data: payload.data || {},
         },
@@ -50,16 +51,18 @@ const sendFCMNotification = async (fcmTokens, payload) => {
         sent++;
       } else {
         failed++;
-        console.warn(`[FCM Push Warning] Error sending to token ${token.substring(0, 8)}...:`, response.data);
+        const tokenHash = `${token.substring(0, 8)}...${token.substring(token.length - 6)}`;
+        console.warn(`[FCM Push Warning] Error sending to token ${tokenHash}:`, response.data);
         if (response.data?.results?.[0]?.error === 'NotRegistered' || response.data?.results?.[0]?.error === 'InvalidRegistration') {
           const PushSubscription = require('../models/PushSubscription');
-          console.log(`📱 [FCM Cleanup] Removing stale FCM token ${token.substring(0, 8)}...`);
+          console.log(`📱 [FCM Cleanup] Removing stale FCM token ${tokenHash}`);
           await PushSubscription.deleteOne({ fcmToken: token });
         }
       }
     } catch (err) {
       failed++;
-      console.error(`[FCM Push Error] Failed for token ${token.substring(0, 8)}...:`, err.message);
+      const tokenHash = `${token.substring(0, 8)}...${token.substring(token.length - 6)}`;
+      console.error(`[FCM Push Error] Failed for token ${tokenHash}:`, err.message);
     }
   }
 

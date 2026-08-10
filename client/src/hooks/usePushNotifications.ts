@@ -52,7 +52,7 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
     }
   }, [isNative, user, sendTokenToBackend]);
 
-  // Check & Setup Android Capacitor Push Notifications
+  // Check & Setup Android Capacitor Push Notifications & Channel
   useEffect(() => {
     if (!isNative) return;
 
@@ -60,6 +60,19 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
 
     const setupNativePush = async () => {
       try {
+        // Create high-priority Android Notification Channel for closed app display
+        await PushNotifications.createChannel({
+          id: 'splitwise_notifications',
+          name: 'SplitWise Notifications',
+          description: 'Expense, settlement, and group activity alerts for SplitWise',
+          importance: 5, // High importance (heads-up banner + sound)
+          visibility: 1, // Public
+          sound: 'default',
+          vibration: true,
+        }).catch((channelErr) => {
+          console.warn('[Native FCM] Create channel notice:', channelErr);
+        });
+
         const permStatus = await PushNotifications.checkPermissions();
         if (!isMounted) return;
         setPermission(permStatus.receive);
@@ -68,7 +81,7 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
           setIsSubscribed(true);
         }
 
-        // 1. Add listeners BEFORE calling register to avoid missing token event
+        // Add listeners BEFORE calling register to avoid missing token event
         const regListener = await PushNotifications.addListener('registration', async (token) => {
           console.log('[Native FCM] Push registration event received token:', token.value ? 'YES' : 'NO');
           await sendTokenToBackend(token.value);
@@ -83,18 +96,20 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
         });
 
         const actionListener = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-          console.log('[Native FCM] Push notification tapped:', notification);
+          console.log('[Native FCM] Push notification tapped action:', notification);
           const data = notification.notification.data || {};
-          if (data.type === 'settlement' || data.type === 'settlement_pending') {
+          const type = data.type || '';
+
+          if (type.includes('settlement')) {
             window.location.href = '/history';
-          } else if (data.type === 'expense') {
+          } else if (type.includes('expense')) {
             window.location.href = '/expenses';
-          } else if (data.type === 'group') {
+          } else if (type.includes('group')) {
             window.location.href = '/dashboard';
           }
         });
 
-        // 2. Safely call register if already granted without crashing
+        // Safely call register if permission is granted
         if (permStatus.receive === 'granted') {
           try {
             await PushNotifications.register();
