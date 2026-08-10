@@ -40,6 +40,7 @@ import {
 } from '@ant-design/icons';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../ui/Toast';
 import { GroupQRModal } from '../modals/GroupQRModal';
 
@@ -72,7 +73,7 @@ const formatTimeAgo = (ts: string) => {
 
 export const Navbar: React.FC = () => {
   const { group, user, userRole, logout } = useAuth();
-  const { notifications, unreadCount, markAllRead, clearNotifications } = useSocket();
+  const { notifications, unreadCount, markAllAsRead, markAsRead } = useNotifications();
   const { showSuccess, confirmAction } = useToast();
   const [copied, setCopied] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -183,22 +184,10 @@ export const Navbar: React.FC = () => {
             <Button
               type="link"
               size="small"
-              onClick={markAllRead}
+              onClick={markAllAsRead}
               style={{ fontSize: 11, padding: 0 }}
             >
               Mark all read
-            </Button>
-          )}
-          {notifications.length > 0 && (
-            <Button
-              type="link"
-              size="small"
-              danger
-              onClick={clearNotifications}
-              icon={<ClearOutlined />}
-              style={{ fontSize: 11, padding: 0 }}
-            >
-              Clear
             </Button>
           )}
         </Space>
@@ -207,10 +196,13 @@ export const Navbar: React.FC = () => {
       {/* Notification List */}
       {notifications.length > 0 ? (
         <Flex vertical>
-          {notifications.slice(0, 15).map((notif) => (
+          {notifications.slice(0, 20).map((notif) => (
             <div
-              key={notif.id}
-              onClick={() => handleNotifClick(notif)}
+              key={notif._id}
+              onClick={() => {
+                markAsRead(notif._id);
+                handleNotifClick(notif);
+              }}
               style={{
                 padding: '10px 12px',
                 cursor: 'pointer',
@@ -235,7 +227,7 @@ export const Navbar: React.FC = () => {
                   {notif.message}
                 </Text>
                 <Text type="secondary" style={{ fontSize: 10, marginTop: 2, display: 'block' }}>
-                  {formatTimeAgo(notif.timestamp)}
+                  {formatTimeAgo(notif.createdAt)}
                 </Text>
               </div>
               {!notif.read && (
@@ -395,7 +387,7 @@ export const Navbar: React.FC = () => {
               onOpenChange={(open) => {
                 setNotifOpen(open);
                 if (open && unreadCount > 0) {
-                  markAllRead();
+                  markAllAsRead();
                 }
               }}
               arrow={false}

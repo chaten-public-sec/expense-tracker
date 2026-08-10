@@ -4,6 +4,7 @@ import { ConfigProvider, App as AntdApp, Spin, Button, notification as antdNotif
 import { CloudDownloadOutlined } from '@ant-design/icons';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { ToastProvider } from './components/ui/Toast';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navbar } from './components/layout/Navbar';
@@ -201,12 +202,13 @@ export const App: React.FC = () => {
           <ToastProvider>
             <AuthProvider>
               <SocketProvider>
-              <BrowserRouter
-                future={{
-                  v7_startTransition: true,
-                  v7_relativeSplatPath: true,
-                }}
-              >
+                <NotificationProvider>
+                  <BrowserRouter
+                    future={{
+                      v7_startTransition: true,
+                      v7_relativeSplatPath: true,
+                    }}
+                  >
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     {/* Public Auth Routes & Deep Links */}
@@ -285,7 +287,8 @@ export const App: React.FC = () => {
                   </Routes>
                 </Suspense>
               </BrowserRouter>
-              </SocketProvider>
+            </NotificationProvider>
+          </SocketProvider>
             </AuthProvider>
           </ToastProvider>
         </AntdApp>

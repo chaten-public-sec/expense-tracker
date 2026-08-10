@@ -5,6 +5,7 @@ const User = require('../models/User');
 const { deleteFromCloudinary } = require('../config/cloudinary');
 const { emitToUser, emitToGroup } = require('../socket/socketManager');
 const { sendPushToUser } = require('../services/pushService');
+const { createNotificationRecord } = require('./notificationController');
 
 // @desc Initiate payment settlement (Online UPI or Cash) or promise (No OTP)
 // @route POST /api/settlements
@@ -111,6 +112,17 @@ const createSettlement = async (req, res) => {
       ? `${req.user.fullName} marked ₹${numAmount.toFixed(2)} as paid in cash. Please confirm receipt.`
       : `${req.user.fullName} paid ₹${numAmount.toFixed(2)} via UPI and uploaded proof for your verification.`;
 
+    // Persist application notification for receiver in MongoDB
+    await createNotificationRecord({
+      recipientUserId: receiverId,
+      senderUserId: req.user._id,
+      type: 'settlement_requested',
+      title: notifTitle,
+      message: notifMsg,
+      entityId: settlement._id,
+      entityType: 'settlement',
+    });
+
     // 1. Target notification to receiver
     emitToUser(receiverId, 'notification', {
       type: 'settlement:submitted',
@@ -175,6 +187,16 @@ const approveSettlement = async (req, res) => {
       ? `${req.user.fullName} confirmed receiving ₹${settlement.amount.toFixed(2)} cash from you! Settlement completed.`
       : `${req.user.fullName} approved your ₹${settlement.amount.toFixed(2)} payment proof! Settlement completed.`;
 
+    await createNotificationRecord({
+      recipientUserId: payerId,
+      senderUserId: req.user._id,
+      type: 'settlement_approved',
+      title: 'Payment Approved!',
+      message: notifMsg,
+      entityId: settlement._id,
+      entityType: 'settlement',
+    });
+
     emitToUser(payerId, 'notification', {
       type: 'settlement:approved',
       settlement,
@@ -235,6 +257,16 @@ const rejectSettlement = async (req, res) => {
     // Notify Payer
     const payerId = settlement.payer._id.toString();
     const notifMsg = `${req.user.fullName} rejected your ₹${settlement.amount.toFixed(2)} payment. Reason: ${cleanReason}`;
+
+    await createNotificationRecord({
+      recipientUserId: payerId,
+      senderUserId: req.user._id,
+      type: 'settlement_rejected',
+      title: 'Payment Rejected',
+      message: notifMsg,
+      entityId: settlement._id,
+      entityType: 'settlement',
+    });
 
     emitToUser(payerId, 'notification', {
       type: 'settlement:rejected',

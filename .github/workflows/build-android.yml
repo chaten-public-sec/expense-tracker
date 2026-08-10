@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK & Live Update Bundle
 
 on:
   push:
@@ -39,6 +39,29 @@ jobs:
           cd client
           npm run build
 
+      - name: Package Web Live Update Bundle
+        run: |
+          cd client/dist
+          zip -r ../../web-bundle.zip .
+
+      - name: Generate Dynamic Update Manifest
+        run: |
+          VERSION="1.0.${{ github.run_number }}"
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat <<EOF > update-manifest.json
+          {
+            "version": "${VERSION}",
+            "minNativeVersion": "1.0.0",
+            "url": "https://github.com/puspendeerrr/expense-tracker/releases/latest/download/web-bundle.zip",
+            "downloadUrl": "https://github.com/puspendeerrr/expense-tracker/releases/latest/download/SplitWise.apk",
+            "releaseNotes": "SplitWise Live Web Bundle ${VERSION}",
+            "channel": "production",
+            "updatedAt": "${NOW}"
+          }
+          EOF
+          echo "Generated update-manifest.json for version ${VERSION}"
+          cat update-manifest.json
+
       - name: Sync Capacitor Android Platform
         run: |
           cd client
@@ -56,19 +79,29 @@ jobs:
         run: |
           cp client/android/app/build/outputs/apk/debug/app-debug.apk SplitWise.apk
 
-      - name: Upload APK Artifact
+      - name: Upload APK & Web Bundle Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SplitWise-Android-APK
-          path: SplitWise.apk
+          name: SplitWise-Artifacts
+          path: |
+            SplitWise.apk
+            web-bundle.zip
+            update-manifest.json
 
       - name: Create or Update GitHub Release (latest)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Latest SplitWise Android Release
-          body: Automatic release build containing the latest SplitWise Android APK.
-          files: SplitWise.apk
+          name: Latest SplitWise Android & Live Update Release
+          body: |
+            ## SplitWise Live Build
+            - **Web Bundle Version**: `1.0.${{ github.run_number }}`
+            - **Native Version**: `1.0.0`
+            - **Published At**: `${{ github.event.head_commit.timestamp }}`
+          files: |
+            SplitWise.apk
+            web-bundle.zip
+            update-manifest.json
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

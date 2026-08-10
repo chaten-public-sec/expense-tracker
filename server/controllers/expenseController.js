@@ -5,6 +5,7 @@ const { uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudina
 const { emitToGroup, emitToUsers } = require('../socket/socketManager');
 const { sendPushToGroup, sendPushToUsers } = require('../services/pushService');
 const { indexExpenseAsync, deleteExpenseIndexAsync } = require('../rag/expenseIndexer');
+const { createNotificationRecord } = require('./notificationController');
 
 // Helper to compute split details array
 const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) => {
@@ -125,6 +126,21 @@ const createExpense = async (req, res) => {
       body: `${req.user.fullName} added ₹${numAmount.toFixed(2)}. Your share is ₹${perPersonShare.toFixed(2)}.`,
       data: { type: 'expense:created', expenseId: expense._id.toString() },
     };
+
+    // Persist application notifications to MongoDB for all recipients
+    for (const recipientId of finalSplitBetween) {
+      if (recipientId.toString() !== req.user._id.toString()) {
+        await createNotificationRecord({
+          recipientUserId: recipientId,
+          senderUserId: req.user._id,
+          type: 'expense_added',
+          title: `New Expense: ${expense.title}`,
+          message: `${req.user.fullName} added "${expense.title}" (Total: ₹${numAmount.toFixed(2)}). Your share is ₹${perPersonShare.toFixed(2)}.`,
+          entityId: expense._id,
+          entityType: 'expense',
+        });
+      }
+    }
 
     if (splitType === 'everyone' || !splitBetween || splitBetween.length === 0) {
       emitToGroup(groupId, 'notification', notificationData, req.user._id.toString());
