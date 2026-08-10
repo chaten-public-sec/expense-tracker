@@ -182,7 +182,7 @@ app.get(['/api/app/update-manifest', '/app/update-manifest'], (req, res) => {
     version: process.env.LIVE_UPDATE_VERSION || '1.0.0',
     minNativeVersion: process.env.LIVE_UPDATE_MIN_NATIVE_VERSION || '1.0.0',
     url: process.env.LIVE_UPDATE_BUNDLE_URL || '',
-    downloadUrl: process.env.ANDROID_DOWNLOAD_URL || 'https://github.com/chaten-public-sec/expense-tracker/releases/latest/download/SplitWise.apk',
+    downloadUrl: process.env.ANDROID_DOWNLOAD_URL || 'https://github.com/puspendeerrr/expense-tracker/releases/latest/download/SplitWise.apk',
     releaseNotes: 'SplitWise production web bundle',
     channel: 'production',
     updatedAt: new Date().toISOString(),
