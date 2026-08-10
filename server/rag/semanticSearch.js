@@ -15,9 +15,11 @@ const searchExpensesSemantically = async (query, userId, groupId, topK = 5) => {
 
   // 1. If Pinecone is configured, attempt vector similarity search
   if (isPineconeConfigured()) {
+    const startTime = Date.now();
     try {
       const index = getPineconeIndex();
       if (index) {
+        console.log(`🌲 [pinecone.search.start] Query: "${query}", userId: ${userId}, groupId: ${groupId}`);
         const queryVector = await generateEmbedding(query);
 
         if (queryVector && queryVector.length > 0) {
@@ -31,7 +33,11 @@ const searchExpensesSemantically = async (query, userId, groupId, topK = 5) => {
             filter,
           });
 
-          if (results && results.matches && results.matches.length > 0) {
+          const latency = Date.now() - startTime;
+          const matchCount = results?.matches?.length || 0;
+
+          if (matchCount > 0) {
+            console.log(`🌲 [pinecone.search.success] Latency: ${latency}ms, Matches: ${matchCount}, Namespace: ${namespace}`);
             const expenseIds = results.matches
               .map(m => m.metadata?.expenseId)
               .filter(Boolean);
@@ -55,11 +61,13 @@ const searchExpensesSemantically = async (query, userId, groupId, topK = 5) => {
                 return orderedResults;
               }
             }
+          } else {
+            console.log(`🌲 [pinecone.search.empty] Latency: ${latency}ms, No vector matches found for query: "${query}"`);
           }
         }
       }
     } catch (err) {
-      console.warn('[Semantic Search Warning] Vector search error, falling back to MongoDB search:', err.message);
+      console.warn('🌲 [pinecone.search.error] Vector search error, falling back to MongoDB search:', err.message);
     }
   }
 

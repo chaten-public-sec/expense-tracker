@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { ConfigProvider, App as AntdApp, Spin } from 'antd';
+import { ConfigProvider, App as AntdApp, Spin, Button, notification as antdNotification } from 'antd';
+import { CloudDownloadOutlined } from '@ant-design/icons';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './components/ui/Toast';
@@ -115,13 +116,40 @@ export const App: React.FC = () => {
       try {
         const result = await checkForLiveUpdate();
         if (result.hasUpdate && result.manifest) {
-          console.log('[LiveUpdate] Compatible web bundle update found! Downloading...');
-          const success = await applyLiveUpdate(result.manifest);
-          if (success) {
-            console.log('[LiveUpdate] Web update prepared. Will apply on next restart.');
-          }
+          const key = `update_notification_${Date.now()}`;
+          antdNotification.open({
+            key,
+            message: 'SplitWise update available',
+            description: 'A new version of SplitWise is ready.',
+            icon: <CloudDownloadOutlined style={{ color: '#2563eb' }} />,
+            duration: 0, // Keep until acted upon
+            btn: (
+              <Button
+                type="primary"
+                size="small"
+                icon={<CloudDownloadOutlined />}
+                onClick={async () => {
+                  antdNotification.destroy(key);
+                  const success = await applyLiveUpdate(result.manifest!);
+                  if (success) {
+                    antdNotification.success({
+                      message: 'SplitWise Updated',
+                      description: 'Restart the app to apply the new version.',
+                    });
+                  }
+                }}
+                style={{ backgroundColor: '#2563eb', borderRadius: 8 }}
+              >
+                Update Now
+              </Button>
+            ),
+          });
         } else if (result.requiresNativeUpdate) {
-          console.warn('[LiveUpdate] A new native SplitWise app version is required.');
+          antdNotification.warning({
+            message: 'SplitWise app update required',
+            description: 'A newer Android APK version is available for SplitWise.',
+            duration: 8,
+          });
         }
       } catch (err) {
         console.warn('[LiveUpdate] Background check error:', err);

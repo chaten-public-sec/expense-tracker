@@ -39,9 +39,17 @@ const processAIStreamQuery = async ({
       return;
     }
 
-    // Setup abort controller for stream cancellation
+    // Setup abort controller for stream cancellation & 15s execution timeout
     const abortController = new AbortController();
     setSessionAbortController(session.sessionId, abortController);
+
+    const timeoutId = setTimeout(() => {
+      if (!abortController.signal.aborted) {
+        console.warn(`[AI Orchestrator] Request timed out after 15s for session ${session.sessionId}`);
+        abortController.abort();
+        if (onError) onError('AI response timed out. Please try again.');
+      }
+    }, 15000);
 
     const modelName = getModelName();
     const systemInstruction = buildSystemPrompt(user.fullName, groupName);
@@ -165,6 +173,8 @@ const processAIStreamQuery = async ({
     if (onError) {
       onError(err.message || 'Error processing AI query.');
     }
+  } finally {
+    if (typeof timeoutId !== 'undefined') clearTimeout(timeoutId);
   }
 };
 

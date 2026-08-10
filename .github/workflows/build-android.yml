@@ -9,6 +9,9 @@ jobs:
   build-android:
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -51,7 +54,6 @@ jobs:
 
       - name: Move APK to Output Location
         run: |
-          mkdir -p builds/android
           cp client/android/app/build/outputs/apk/debug/app-debug.apk SplitWise.apk
 
       - name: Upload APK Artifact
@@ -59,3 +61,14 @@ jobs:
         with:
           name: SplitWise-Android-APK
           path: SplitWise.apk
+
+      - name: Create or Update GitHub Release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest SplitWise Android Release
+          body: Automatic release build containing the latest SplitWise Android APK.
+          files: SplitWise.apk
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

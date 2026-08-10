@@ -23,49 +23,57 @@ console.log('[Web Push] VAPID credentials active');
  */
 const getVapidPublicKey = () => vapidPublicKey;
 
+const { sendFCMNotification } = require('./fcmService');
+
 /**
- * Send a push notification to all subscriptions for a given user
+ * Send a push notification to all subscriptions & devices for a given user
  * @param {string} userId
  * @param {{ title: string, body: string, data?: object, icon?: string }} payload
  */
 const sendPushToUser = async (userId, payload) => {
-  if (!vapidPublicKey || !vapidPrivateKey) return;
-
   try {
     const subscriptions = await PushSubscription.find({ userId: userId.toString() });
-
     if (subscriptions.length === 0) return;
 
-    const pushPayload = JSON.stringify({
-      title: payload.title || 'SplitWise',
-      body: payload.body || '',
-      data: payload.data || {},
-      icon: payload.icon || '/favicon.ico',
-    });
+    // 1. Separate Web Push subscriptions vs Android FCM tokens
+    const webSubs = subscriptions.filter(s => s.subscription && s.subscription.endpoint);
+    const fcmTokens = subscriptions.filter(s => s.fcmToken).map(s => s.fcmToken);
 
-    const results = await Promise.allSettled(
-      subscriptions.map((sub) =>
-        webpush.sendNotification(sub.subscription, pushPayload).catch(async (err) => {
-          // 410 Gone or 404 means the subscription is invalid/expired — clean up
-          if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`[Web Push] Removing expired subscription for user ${userId}: ${sub.subscription.endpoint.substring(0, 50)}...`);
-            await PushSubscription.deleteOne({ _id: sub._id });
-          } else {
-            console.error(`[Web Push] Error sending to user ${userId}:`, err.message);
-          }
-          throw err;
-        })
-      )
-    );
+    // 2. Dispatch Android FCM Notifications
+    if (fcmTokens.length > 0) {
+      await sendFCMNotification(fcmTokens, payload);
+    }
 
-    const sent = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
+    // 3. Dispatch Web Push Notifications
+    if (webSubs.length > 0 && vapidPublicKey && vapidPrivateKey) {
+      const pushPayload = JSON.stringify({
+        title: payload.title || 'SplitWise',
+        body: payload.body || '',
+        data: payload.data || {},
+        icon: payload.icon || '/favicon.ico',
+      });
 
-    if (sent > 0) {
-      console.log(`[Web Push] Sent ${sent} notification(s) to user ${userId}${failed > 0 ? ` (${failed} failed)` : ''}`);
+      const results = await Promise.allSettled(
+        webSubs.map((sub) =>
+          webpush.sendNotification(sub.subscription, pushPayload).catch(async (err) => {
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              console.log(`[Web Push] Removing expired subscription for user ${userId}`);
+              await PushSubscription.deleteOne({ _id: sub._id });
+            } else {
+              console.error(`[Web Push] Error sending to user ${userId}:`, err.message);
+            }
+            throw err;
+          })
+        )
+      );
+
+      const sent = results.filter((r) => r.status === 'fulfilled').length;
+      if (sent > 0) {
+        console.log(`[Web Push] Sent ${sent} web notification(s) to user ${userId}`);
+      }
     }
   } catch (err) {
-    console.error(`[Web Push] Unexpected error for user ${userId}:`, err.message);
+    console.error(`[Push Service] Unexpected error for user ${userId}:`, err.message);
   }
 };
 

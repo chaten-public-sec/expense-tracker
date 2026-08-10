@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
+import { PushNotifications } from '@capacitor/push-notifications';
 import api from '../services/api';
-
 import { isCapacitorNative } from '../utils/upiHelper';
 
 interface UsePushNotificationsReturn {
   isSupported: boolean;
-  permission: NotificationPermission | 'unsupported';
+  permission: NotificationPermission | 'granted' | 'denied' | 'prompt' | 'unsupported';
   isSubscribed: boolean;
   isLoading: boolean;
   requestPermission: () => Promise<boolean>;
@@ -14,18 +14,78 @@ interface UsePushNotificationsReturn {
 }
 
 export const usePushNotifications = (): UsePushNotificationsReturn => {
-  const hasBrowserPush = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  const isSupported = hasBrowserPush || isCapacitorNative();
+  const hasBrowserPush = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const isNative = isCapacitorNative();
+  const isSupported = hasBrowserPush || isNative;
 
-  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
-    hasBrowserPush ? Notification.permission : isCapacitorNative() ? 'granted' : 'unsupported'
+  const [permission, setPermission] = useState<any>(
+    isNative ? 'prompt' : hasBrowserPush ? Notification.permission : 'unsupported'
   );
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Check existing subscription status on mount
+  // Check & Setup Android Capacitor Push Notifications
   useEffect(() => {
-    if (!hasBrowserPush) return;
+    if (!isNative) return;
+
+    const setupNativePush = async () => {
+      try {
+        const permStatus = await PushNotifications.checkPermissions();
+        setPermission(permStatus.receive);
+
+        if (permStatus.receive === 'granted') {
+          setIsSubscribed(true);
+        }
+
+        // Add listeners for registration, errors, and notification actions
+        const regListener = await PushNotifications.addListener('registration', async (token) => {
+          const tokenHash = `${token.value.substring(0, 8)}...${token.value.substring(token.value.length - 6)}`;
+          console.log('[Native FCM] FCM Token received:', tokenHash);
+          try {
+            await api.post('/notifications/register-fcm', { fcmToken: token.value });
+            setIsSubscribed(true);
+          } catch (err) {
+            console.error('[Native FCM] Failed to send FCM token to backend:', err);
+          }
+        });
+
+        const errListener = await PushNotifications.addListener('registrationError', (err) => {
+          console.error('[Native FCM] Registration error:', err);
+        });
+
+        const pushListener = await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+          console.log('[Native FCM] Push notification received in foreground:', notification);
+        });
+
+        const actionListener = await PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+          console.log('[Native FCM] Push notification tapped:', notification);
+          const data = notification.notification.data || {};
+          if (data.type === 'settlement' || data.type === 'settlement_pending') {
+            window.location.href = '/history';
+          } else if (data.type === 'expense') {
+            window.location.href = '/expenses';
+          } else if (data.type === 'group') {
+            window.location.href = '/dashboard';
+          }
+        });
+
+        return () => {
+          regListener.remove();
+          errListener.remove();
+          pushListener.remove();
+          actionListener.remove();
+        };
+      } catch (err) {
+        console.warn('[Native FCM] Error initializing native push:', err);
+      }
+    };
+
+    setupNativePush();
+  }, [isNative]);
+
+  // Check existing browser subscription status on mount
+  useEffect(() => {
+    if (!hasBrowserPush || isNative) return;
 
     const checkExistingSubscription = async () => {
       try {
@@ -35,17 +95,29 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
           setIsSubscribed(!!subscription);
         }
       } catch (err) {
-        // Silently ignore — just means we can't detect status
+        // Silently ignore
       }
     };
 
     checkExistingSubscription();
-  }, [isSupported]);
+  }, [hasBrowserPush, isNative]);
 
   const requestPermission = useCallback(async (): Promise<boolean> => {
-    if (!isSupported) {
-      console.warn('[Push] Browser does not support push notifications');
-      return false;
+    if (!isSupported) return false;
+
+    if (isNative) {
+      try {
+        const permResult = await PushNotifications.requestPermissions();
+        setPermission(permResult.receive);
+        if (permResult.receive === 'granted') {
+          await PushNotifications.register();
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.error('[Native FCM] Permission request error:', err);
+        return false;
+      }
     }
 
     try {
@@ -53,10 +125,10 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
       setPermission(result);
       return result === 'granted';
     } catch (err) {
-      console.error('[Push] Error requesting permission:', err);
+      console.error('[Web Push] Error requesting permission:', err);
       return false;
     }
-  }, [isSupported]);
+  }, [isSupported, isNative]);
 
   const subscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false;
@@ -64,28 +136,28 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
     try {
       setIsLoading(true);
 
-      // 1. Request notification permission
-      const granted = await requestPermission();
-      if (!granted) {
-        console.log('[Push] Permission not granted');
+      if (isNative) {
+        const granted = await requestPermission();
+        if (granted) {
+          await PushNotifications.register();
+          setIsSubscribed(true);
+          return true;
+        }
         return false;
       }
 
-      // 2. Register service worker
+      // Web Push flow
+      const granted = await requestPermission();
+      if (!granted) return false;
+
       const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       await navigator.serviceWorker.ready;
-      console.log('[Push] Service Worker registered:', registration.scope);
 
-      // 3. Get VAPID public key from server
       const vapidRes = await api.get('/notifications/vapid-key');
       const vapidPublicKey = vapidRes.data.publicKey;
 
-      if (!vapidPublicKey) {
-        console.error('[Push] No VAPID public key from server');
-        return false;
-      }
+      if (!vapidPublicKey) return false;
 
-      // 4. Convert VAPID key to Uint8Array
       const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
         const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
         const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -97,19 +169,16 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
         return outputArray;
       };
 
-      // 5. Subscribe with PushManager
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
       });
 
-      // 6. Send subscription to server
       await api.post('/notifications/subscribe', {
         subscription: subscription.toJSON(),
       });
 
       setIsSubscribed(true);
-      console.log('[Push] Successfully subscribed to push notifications');
       return true;
     } catch (err) {
       console.error('[Push] Subscription error:', err);
@@ -117,7 +186,7 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [isSupported, requestPermission]);
+  }, [isSupported, isNative, requestPermission]);
 
   const unsubscribe = useCallback(async (): Promise<boolean> => {
     if (!isSupported) return false;
@@ -125,30 +194,26 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
     try {
       setIsLoading(true);
 
-      const registration = await navigator.serviceWorker.getRegistration('/');
-      if (!registration) {
+      if (isNative) {
         setIsSubscribed(false);
         return true;
       }
 
-      const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        const endpoint = subscription.endpoint;
-
-        // Unsubscribe from browser PushManager
-        await subscription.unsubscribe();
-
-        // Remove from server DB
-        try {
-          await api.post('/notifications/unsubscribe', { endpoint });
-        } catch (serverErr) {
-          // Server cleanup is best-effort — browser is already unsubscribed
-          console.warn('[Push] Server unsubscribe cleanup failed:', serverErr);
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      if (registration) {
+        const subscription = await registration.pushManager.getSubscription();
+        if (subscription) {
+          const endpoint = subscription.endpoint;
+          await subscription.unsubscribe();
+          try {
+            await api.post('/notifications/unsubscribe', { endpoint });
+          } catch (serverErr) {
+            // Best effort
+          }
         }
       }
 
       setIsSubscribed(false);
-      console.log('[Push] Successfully unsubscribed from push notifications');
       return true;
     } catch (err) {
       console.error('[Push] Unsubscribe error:', err);
@@ -156,7 +221,7 @@ export const usePushNotifications = (): UsePushNotificationsReturn => {
     } finally {
       setIsLoading(false);
     }
-  }, [isSupported]);
+  }, [isSupported, isNative]);
 
   return {
     isSupported,
