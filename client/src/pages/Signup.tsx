@@ -74,7 +74,12 @@ export const Signup: React.FC = () => {
       });
 
       showSuccess('Account created successfully!');
-      navigate('/dashboard');
+      const pendingJoinToken = sessionStorage.getItem('pending_join_token');
+      if (pendingJoinToken) {
+        navigate(`/join/${pendingJoinToken}`, { replace: true });
+      } else {
+        navigate('/no-group', { replace: true });
+      }
     } catch (err: any) {
       console.error('Signup error:', err);
       const msg = err.response?.data?.message || 'Failed to create account.';

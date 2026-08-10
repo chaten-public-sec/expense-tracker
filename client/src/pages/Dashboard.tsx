@@ -14,6 +14,7 @@ import {
   Empty,
   Flex,
   Tooltip,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -31,8 +32,12 @@ import {
   HistoryOutlined,
   MobileOutlined,
   DollarCircleOutlined,
+  WalletOutlined,
+  CheckCircleOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { useToast } from '../components/ui/Toast';
 import { DashboardData, Expense, GroupMember, OwedPerson, Settlement, User } from '../types';
 import api from '../services/api';
@@ -45,10 +50,11 @@ import { BreakdownModal } from '../components/modals/BreakdownModal';
 import { SettlementModal } from '../components/modals/SettlementModal';
 import { UPIDetailModal } from '../components/modals/UPIDetailModal';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 export const Dashboard: React.FC = () => {
   const { user, group, userRole } = useAuth();
+  const { socket } = useSocket();
   const { showError, showSuccess } = useToast();
   const navigate = useNavigate();
 
@@ -105,6 +111,23 @@ export const Dashboard: React.FC = () => {
     loadDashboardData();
   }, []);
 
+  // Live Socket.IO synchronization for settlements and expenses
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleLiveSync = () => {
+      loadDashboardData();
+    };
+
+    socket.on('settlement:updated', handleLiveSync);
+    socket.on('notification', handleLiveSync);
+
+    return () => {
+      socket.off('settlement:updated', handleLiveSync);
+      socket.off('notification', handleLiveSync);
+    };
+  }, [socket]);
+
   const handleSendReminder = async (targetUserId: string, targetName: string) => {
     try {
       setRemindLoadingMap((prev) => ({ ...prev, [targetUserId]: true }));
@@ -118,6 +141,7 @@ export const Dashboard: React.FC = () => {
   };
 
   const formatTimeAgo = (dateStr: string) => {
+    if (!dateStr) return '';
     const now = new Date();
     const past = new Date(dateStr);
     const diffMs = now.getTime() - past.getTime();
@@ -160,9 +184,9 @@ export const Dashboard: React.FC = () => {
 
   if (isLoading && !data) {
     return (
-      <div style={{ padding: 40, textAlign: 'center' }}>
+      <div style={{ padding: '60px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
         <Spin size="large" />
-        <Text type="secondary" style={{ display: 'block', marginTop: 12 }}>
+        <Text type="secondary" style={{ fontSize: 13 }}>
           Loading your financial overview...
         </Text>
       </div>
@@ -190,20 +214,21 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Pending Verifications Alerts */}
+      {/* 1. Pending Verifications Alert */}
       {receiverVerifications.length > 0 && (
         <Alert
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <span style={{ fontSize: 12 }}>
-                <strong>Action:</strong> {receiverVerifications.length} incoming settlement verification pending!
+                <strong>Pending Action:</strong> {receiverVerifications.length} incoming payment proof awaiting your approval!
               </span>
               <Button
                 size="small"
                 type="primary"
                 onClick={() => setReceiverPendingSettlement(receiverVerifications[0])}
+                style={{ borderRadius: 6 }}
               >
-                Verify
+                Review Proof
               </Button>
             </div>
           }
@@ -214,76 +239,88 @@ export const Dashboard: React.FC = () => {
         />
       )}
 
-      {/* Payday Billing Cycle Banner */}
+      {/* 2. Payday Billing Cycle Banner */}
       {billingCycle?.payday && (
         <Alert
           title={
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
               <Space size={6} align="center">
-                <CalendarOutlined style={{ color: '#1677ff', fontSize: 14 }} />
+                <CalendarOutlined style={{ color: '#2563eb', fontSize: 14 }} />
                 <span style={{ fontSize: 12 }}>
                   <strong>Billing Cycle:</strong> {formatDateShort(billingCycle.startDate)} – {formatDateShort(billingCycle.endDate)}
                 </span>
               </Space>
               <Tag color={billingCycle.isPaydayToday ? 'gold' : 'blue'} style={{ margin: 0, fontWeight: 600 }}>
                 {billingCycle.isPaydayToday
-                  ? '⚡ Today is Group Payday!'
+                  ? 'Today is Group Payday'
                   : `Next Payday in ${billingCycle.daysRemaining} days`}
               </Tag>
             </div>
           }
           type={billingCycle.isPaydayToday ? 'warning' : 'info'}
-          style={{ borderRadius: 12, background: billingCycle.isPaydayToday ? '#fffbe6' : '#f0f5ff' }}
+          style={{ borderRadius: 12, background: billingCycle.isPaydayToday ? '#fffbe6' : '#f0f7ff' }}
         />
       )}
 
-      {/* Main Net Balance Hero Card */}
+      {/* 3. Hero Financial Summary Card */}
       <Card
         style={{
           borderRadius: 16,
-          background: netBalance > 0 ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)' : netBalance < 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)' : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+          background:
+            netBalance > 0
+              ? 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)'
+              : netBalance < 0
+              ? 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)'
+              : 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
           borderColor: netBalance > 0 ? '#bbf7d0' : netBalance < 0 ? '#fecaca' : '#e2e8f0',
         }}
         styles={{ body: { padding: '18px 16px' } }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <Text type="secondary" style={{ fontSize: 12, fontWeight: 500 }}>
-              Total Net Balance
+            <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Your Net Balance
             </Text>
-            <Title
-              level={2}
-              style={{
-                margin: '2px 0 0',
-                fontSize: 26,
-                color: netBalance > 0 ? '#16a34a' : netBalance < 0 ? '#dc2626' : '#1f2937',
-              }}
-            >
-              {netBalance > 0 ? `+₹${netBalance.toFixed(2)}` : netBalance < 0 ? `-₹${Math.abs(netBalance).toFixed(2)}` : '₹0.00'}
-            </Title>
-            <Text type="secondary" style={{ fontSize: 11 }}>
+            <div className="financial-num" style={{ fontSize: 28, margin: '2px 0', color: netBalance > 0 ? '#16a34a' : netBalance < 0 ? '#dc2626' : '#0f172a' }}>
               {netBalance > 0
-                ? 'You are owed money in total'
+                ? `+₹${netBalance.toFixed(2)}`
                 : netBalance < 0
-                ? 'You owe money in total'
-                : 'All flatmate balances settled'}
+                ? `-₹${Math.abs(netBalance).toFixed(2)}`
+                : '₹0.00'}
+            </div>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {netBalance > 0
+                ? 'Flatmates owe you money overall'
+                : netBalance < 0
+                ? 'You have pending dues to pay'
+                : 'All flatmate balances are settled'}
             </Text>
           </div>
 
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setIsAddExpenseOpen(true)}
-            style={{ borderRadius: 10, height: 38 }}
-          >
-            Add Expense
-          </Button>
+          <Space size={8} wrap>
+            {youNeedToPayList.length > 0 && (
+              <Button
+                onClick={() => setSettlementTarget(youNeedToPayList[0])}
+                style={{ borderRadius: 10, height: 40, fontWeight: 600 }}
+              >
+                Settle Up
+              </Button>
+            )}
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setIsAddExpenseOpen(true)}
+              style={{ borderRadius: 10, height: 40, background: '#2563eb' }}
+            >
+              Add Expense
+            </Button>
+          </Space>
         </div>
       </Card>
 
-      {/* Split Cards: You Need to Pay / You Will Receive */}
+      {/* 4. Dual Financial Breakdown Cards */}
       <Row gutter={[10, 10]}>
-        <Col span={12}>
+        <Col xs={12} sm={12} md={12}>
           <Card
             hoverable
             onClick={() => setBreakdownType('need_to_pay')}
@@ -291,24 +328,27 @@ export const Dashboard: React.FC = () => {
             styles={{ body: { padding: 14 } }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-                You Owe
-              </Text>
-              <Tag color="error" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+              <Space size={4}>
+                <ArrowDownOutlined style={{ color: '#dc2626', fontSize: 12 }} />
+                <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>
+                  You Need To Pay
+                </Text>
+              </Space>
+              <Tag color="error" style={{ margin: 0, fontSize: 10, borderRadius: 4, padding: '0 4px' }}>
                 {youNeedToPayList.length}
               </Tag>
             </div>
-            <Text strong style={{ fontSize: 18, color: '#ef4444', display: 'block' }}>
+            <div className="financial-num" style={{ fontSize: 20, color: '#dc2626' }}>
               ₹{youNeedToPayTotal.toFixed(2)}
-            </Text>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: 10 }}>View dues</Text>
-              <RightOutlined style={{ fontSize: 9, color: '#9ca3af' }} />
+              <Text type="secondary" style={{ fontSize: 11 }}>View breakdown</Text>
+              <RightOutlined style={{ fontSize: 10, color: '#94a3b8' }} />
             </div>
           </Card>
         </Col>
 
-        <Col span={12}>
+        <Col xs={12} sm={12} md={12}>
           <Card
             hoverable
             onClick={() => setBreakdownType('will_receive')}
@@ -316,30 +356,33 @@ export const Dashboard: React.FC = () => {
             styles={{ body: { padding: 14 } }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-                You Receive
-              </Text>
-              <Tag color="success" style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
+              <Space size={4}>
+                <ArrowUpOutlined style={{ color: '#16a34a', fontSize: 12 }} />
+                <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>
+                  You Will Receive
+                </Text>
+              </Space>
+              <Tag color="success" style={{ margin: 0, fontSize: 10, borderRadius: 4, padding: '0 4px' }}>
                 {youWillReceiveList.length}
               </Tag>
             </div>
-            <Text strong style={{ fontSize: 18, color: '#10b981', display: 'block' }}>
+            <div className="financial-num" style={{ fontSize: 20, color: '#16a34a' }}>
               ₹{youWillReceiveTotal.toFixed(2)}
-            </Text>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-              <Text type="secondary" style={{ fontSize: 10 }}>View receivables</Text>
-              <RightOutlined style={{ fontSize: 9, color: '#9ca3af' }} />
+              <Text type="secondary" style={{ fontSize: 11 }}>View receivables</Text>
+              <RightOutlined style={{ fontSize: 10, color: '#94a3b8' }} />
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* Dues Action Items List (If Any Dues) */}
+      {/* 5. Direct Action Items: People You Owe */}
       {youNeedToPayList.length > 0 && (
         <Card
           title={
             <Space size={6}>
-              <ArrowDownOutlined style={{ color: '#ef4444' }} />
+              <ArrowDownOutlined style={{ color: '#dc2626' }} />
               <span style={{ fontSize: 14 }}>People You Owe</span>
             </Space>
           }
@@ -354,21 +397,21 @@ export const Dashboard: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '8px 10px',
-                  background: '#fafafa',
+                  padding: '10px 12px',
+                  background: '#f8fafc',
                   borderRadius: 10,
-                  border: '1px solid #f0f0f0',
+                  border: '1px solid #e2e8f0',
                 }}
               >
-                <Space size={8} align="center">
-                  <Avatar size={34} style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
+                <Space size={10} align="center">
+                  <Avatar size={36} style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
                     {person.user.fullName?.charAt(0).toUpperCase()}
                   </Avatar>
                   <div>
                     <Text strong style={{ fontSize: 13, display: 'block', lineHeight: 1.2 }}>
                       {person.user.fullName}
                     </Text>
-                    <Text type="danger" style={{ fontSize: 12, fontWeight: 600 }}>
+                    <Text style={{ fontSize: 13, color: '#dc2626', fontWeight: 700 }} className="financial-num">
                       ₹{person.amount.toFixed(2)}
                     </Text>
                   </div>
@@ -389,6 +432,7 @@ export const Dashboard: React.FC = () => {
                       });
                       setUpiModalAmount(person.amount);
                     }}
+                    style={{ borderRadius: 8 }}
                   >
                     UPI / QR
                   </Button>
@@ -397,6 +441,7 @@ export const Dashboard: React.FC = () => {
                     size="small"
                     type="primary"
                     onClick={() => setSettlementTarget(person)}
+                    style={{ borderRadius: 8, background: '#2563eb' }}
                   >
                     Settle
                   </Button>
@@ -407,13 +452,13 @@ export const Dashboard: React.FC = () => {
         </Card>
       )}
 
-      {/* Admin Remind Section (People Who Owe You / Group) */}
+      {/* 6. Admin Remind Section: People Who Owe Dues */}
       {userRole === 'creator' && youWillReceiveList.length > 0 && (
         <Card
           title={
             <Space size={6}>
-              <ArrowUpOutlined style={{ color: '#10b981' }} />
-              <span style={{ fontSize: 14 }}>Flatmates Who Owe Dues (Admin Reminders)</span>
+              <ArrowUpOutlined style={{ color: '#16a34a' }} />
+              <span style={{ fontSize: 14 }}>Flatmates Who Owe Dues</span>
             </Space>
           }
           style={{ borderRadius: 14 }}
@@ -427,21 +472,21 @@ export const Dashboard: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  padding: '8px 10px',
-                  background: '#fafafa',
+                  padding: '10px 12px',
+                  background: '#f8fafc',
                   borderRadius: 10,
-                  border: '1px solid #f0f0f0',
+                  border: '1px solid #e2e8f0',
                 }}
               >
-                <Space size={8} align="center">
-                  <Avatar size={34} style={{ backgroundColor: '#1677ff' }} icon={<UserOutlined />}>
+                <Space size={10} align="center">
+                  <Avatar size={36} style={{ backgroundColor: '#2563eb' }} icon={<UserOutlined />}>
                     {person.user.fullName?.charAt(0).toUpperCase()}
                   </Avatar>
                   <div>
                     <Text strong style={{ fontSize: 13, display: 'block', lineHeight: 1.2 }}>
                       {person.user.fullName}
                     </Text>
-                    <Text style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>
+                    <Text style={{ fontSize: 13, color: '#16a34a', fontWeight: 700 }} className="financial-num">
                       Owes ₹{person.amount.toFixed(2)}
                     </Text>
                   </div>
@@ -452,8 +497,9 @@ export const Dashboard: React.FC = () => {
                   icon={<SendOutlined />}
                   loading={remindLoadingMap[person.user._id]}
                   onClick={() => handleSendReminder(person.user._id, person.user.fullName)}
+                  style={{ borderRadius: 8 }}
                 >
-                  Send Pay Now
+                  Remind
                 </Button>
               </div>
             ))}
@@ -461,16 +507,21 @@ export const Dashboard: React.FC = () => {
         </Card>
       )}
 
-      {/* Recent Expenses List */}
+      {/* 7. Recent Expenses List */}
       <Card
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space size={6}>
-              <HistoryOutlined style={{ color: '#1677ff' }} />
+              <HistoryOutlined style={{ color: '#2563eb' }} />
               <span style={{ fontSize: 14 }}>Recent Expenses</span>
             </Space>
-            <Button type="link" size="small" onClick={() => navigate('/expenses')} style={{ fontSize: 12, padding: 0 }}>
-              View All
+            <Button
+              type="link"
+              size="small"
+              onClick={() => navigate('/expenses')}
+              style={{ fontSize: 12, padding: 0, fontWeight: 600 }}
+            >
+              View All →
             </Button>
           </div>
         }
@@ -488,18 +539,18 @@ export const Dashboard: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '10px 12px',
-                  background: '#fafafa',
+                  background: '#f8fafc',
                   borderRadius: 10,
-                  border: '1px solid #f0f0f0',
+                  border: '1px solid #e2e8f0',
                   cursor: 'pointer',
-                  transition: 'background 0.2s',
+                  transition: 'all 0.15s ease',
                 }}
               >
                 <Space size={10} align="center">
                   <Avatar
                     style={{
-                      backgroundColor: item.paymentMode === 'upi' ? '#e6f4ff' : '#f6ffed',
-                      color: item.paymentMode === 'upi' ? '#1677ff' : '#52c41a',
+                      backgroundColor: item.paymentMode === 'upi' ? '#eff6ff' : '#f0fdf4',
+                      color: item.paymentMode === 'upi' ? '#2563eb' : '#16a34a',
                       flexShrink: 0,
                     }}
                     size={36}
@@ -516,27 +567,31 @@ export const Dashboard: React.FC = () => {
                 </Space>
 
                 <div style={{ textAlign: 'right' }}>
-                  <Text strong style={{ fontSize: 14, color: '#1f2937', display: 'block' }}>
+                  <div className="financial-num" style={{ fontSize: 14, color: '#0f172a' }}>
                     ₹{item.amount.toFixed(2)}
-                  </Text>
-                  <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px' }}>
-                    {item.splitType === 'everyone' ? 'Everyone' : 'Specific'}
+                  </div>
+                  <Tag style={{ margin: 0, fontSize: 10, padding: '0 4px', borderRadius: 4 }}>
+                    {item.splitType === 'everyone' ? 'Split with All' : 'Specific'}
                   </Tag>
                 </div>
               </div>
             ))}
           </Flex>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No expenses recorded yet" style={{ margin: '16px 0' }} />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="No expenses recorded yet."
+            style={{ margin: '16px 0' }}
+          />
         )}
       </Card>
 
-      {/* Recent Group Activity Logs */}
+      {/* 8. Recent Group Activity Logs */}
       {data?.recentActivity && data.recentActivity.length > 0 && (
         <Card
           title={
             <Space size={6}>
-              <ClockCircleOutlined style={{ color: '#1677ff' }} />
+              <ClockCircleOutlined style={{ color: '#2563eb' }} />
               <span style={{ fontSize: 14 }}>Recent Group Activity</span>
             </Space>
           }
@@ -544,7 +599,7 @@ export const Dashboard: React.FC = () => {
           styles={{ body: { padding: 12 } }}
         >
           <Flex vertical gap={8}>
-            {data.recentActivity.slice(0, 6).map((act) => (
+            {data.recentActivity.slice(0, 5).map((act) => (
               <div
                 key={act._id}
                 style={{
@@ -552,31 +607,31 @@ export const Dashboard: React.FC = () => {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '8px 10px',
-                  background: '#fafafa',
+                  background: '#f8fafc',
                   borderRadius: 8,
-                  border: '1px solid #f0f0f0',
+                  border: '1px solid #e2e8f0',
                 }}
               >
                 <Space size={8}>
-                  <Avatar size="small" style={{ backgroundColor: '#0f172a' }} icon={<UserOutlined />}>
+                  <Avatar size="small" style={{ backgroundColor: '#0f172a', fontSize: 11 }} icon={<UserOutlined />}>
                     {act.user?.fullName?.charAt(0).toUpperCase()}
                   </Avatar>
-                  <div>
-                    <Text style={{ fontSize: 12, fontWeight: 500, display: 'block' }}>
-                      <strong>{act.user?.fullName}</strong> {act.action}
-                    </Text>
-                  </div>
+                  <Text style={{ fontSize: 12, fontWeight: 500 }}>
+                    <strong>{act.user?.fullName}</strong> {act.action}
+                  </Text>
                 </Space>
-                <Tag color="blue" style={{ margin: 0, fontSize: 10 }}>
+                <Text type="secondary" style={{ fontSize: 10 }}>
                   {formatFullTime(act.createdAt)}
-                </Tag>
+                </Text>
               </div>
             ))}
           </Flex>
         </Card>
       )}
 
-      {/* Modals */}
+      {/* ==========================================
+          MODALS & DRAWERS
+          ========================================== */}
       <AddExpenseModal
         isOpen={isAddExpenseOpen}
         onClose={() => setIsAddExpenseOpen(false)}

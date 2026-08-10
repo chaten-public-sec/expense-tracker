@@ -1,6 +1,6 @@
 {
   "appId": "com.splitwise.app",
-  "appName": "Splitwise",
+  "appName": "SplitWise",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {

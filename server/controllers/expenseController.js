@@ -4,6 +4,7 @@ const Activity = require('../models/Activity');
 const { uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 const { emitToGroup, emitToUsers } = require('../socket/socketManager');
 const { sendPushToGroup, sendPushToUsers } = require('../services/pushService');
+const { indexExpenseAsync, deleteExpenseIndexAsync } = require('../rag/expenseIndexer');
 
 // Helper to compute split details array
 const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) => {
@@ -34,7 +35,11 @@ const computeSplits = async (groupId, amount, splitType, splitBetween, paidBy) =
 // @route POST /api/expenses
 const createExpense = async (req, res) => {
   try {
-    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId } = req.body;
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId, date } = req.body;
+
+    if (req.user.isSuperAdmin || req.user.email === 'admin@gmail.com') {
+      return res.status(403).json({ message: 'Super Admin accounts cannot create personal expenses in user groups.' });
+    }
 
     if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Expense title is required' });
@@ -43,6 +48,21 @@ const createExpense = async (req, res) => {
     const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
       return res.status(400).json({ message: 'Valid expense amount is required' });
+    }
+
+    // Validate expense date if provided (cannot be in the future, allowing timezone tolerance)
+    let expenseDate = new Date();
+    if (date !== undefined && date !== null && date !== '') {
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid expense date provided' });
+      }
+      // Allow current day with 24-hour buffer for timezones
+      const nowWithBuffer = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      if (parsedDate > nowWithBuffer) {
+        return res.status(400).json({ message: 'Expense date cannot be in the future' });
+      }
+      expenseDate = parsedDate;
     }
 
     // Find active group
@@ -74,7 +94,7 @@ const createExpense = async (req, res) => {
       screenshotUrl: screenshotUrl || null,
       screenshotPublicId: screenshotPublicId || null,
       notes: notes || '',
-      date: new Date()
+      date: expenseDate
     });
 
     const populatedExpense = await Expense.findById(expense._id)
@@ -113,6 +133,9 @@ const createExpense = async (req, res) => {
       emitToUsers(finalSplitBetween, 'notification', notificationData, req.user._id.toString());
       sendPushToUsers(finalSplitBetween, pushPayload, req.user._id.toString());
     }
+
+    // Trigger non-blocking Pinecone indexing
+    indexExpenseAsync(expense._id);
 
     return res.status(201).json(populatedExpense);
   } catch (error) {
@@ -165,7 +188,7 @@ const getExpenseById = async (req, res) => {
 // @route PUT /api/expenses/:id
 const updateExpense = async (req, res) => {
   try {
-    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId } = req.body;
+    const { title, amount, paidBy, splitType, splitBetween, paymentMode, notes, screenshotUrl, screenshotPublicId, date } = req.body;
     const expense = await Expense.findById(req.params.id);
 
     if (!expense) {
@@ -190,6 +213,19 @@ const updateExpense = async (req, res) => {
     const numAmount = amount ? parseFloat(amount) : expense.amount;
     if (isNaN(numAmount) || numAmount <= 0) {
       return res.status(400).json({ message: 'Valid expense amount is required' });
+    }
+
+    // Validate expense date if updated
+    if (date !== undefined && date !== null && date !== '') {
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid expense date provided' });
+      }
+      const nowWithBuffer = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      if (parsedDate > nowWithBuffer) {
+        return res.status(400).json({ message: 'Expense date cannot be in the future' });
+      }
+      expense.date = parsedDate;
     }
 
     const payerId = paidBy || expense.paidBy.toString();
@@ -246,6 +282,9 @@ const updateExpense = async (req, res) => {
       data: { type: 'expense:updated', expenseId: expense._id.toString() },
     }, req.user._id.toString());
 
+    // Trigger non-blocking Pinecone update
+    indexExpenseAsync(expense._id);
+
     return res.json(updatedExpense);
   } catch (error) {
     console.error('Update Expense Error:', error);
@@ -280,6 +319,10 @@ const deleteExpense = async (req, res) => {
     const title = expense.title;
     const groupId = expense.groupId;
     const expenseAmount = expense.amount;
+    const allParticipantIds = [
+      expense.paidBy.toString(),
+      ...(expense.splitBetween ? expense.splitBetween.map(id => id.toString()) : []),
+    ];
 
     // Feature 1: Delete bill screenshot proof from Cloudinary if it exists
     if (expense.screenshotPublicId) {
@@ -308,6 +351,9 @@ const deleteExpense = async (req, res) => {
       body: `${req.user.fullName} removed "${title}" (₹${expenseAmount.toFixed(2)})`,
       data: { type: 'expense:deleted' },
     }, req.user._id.toString());
+
+    // Trigger non-blocking Pinecone deletion
+    deleteExpenseIndexAsync(expense._id, allParticipantIds);
 
     return res.json({ message: 'Expense deleted successfully' });
   } catch (error) {

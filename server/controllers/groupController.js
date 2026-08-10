@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Group = require('../models/Group');
 const GroupMember = require('../models/GroupMember');
 const Expense = require('../models/Expense');
@@ -19,6 +20,11 @@ const generateInviteCode = () => {
   return code;
 };
 
+// Generate opaque cryptographically secure 32-character hex invite token
+const generateInviteToken = () => {
+  return crypto.randomBytes(16).toString('hex');
+};
+
 // @desc Create a new group
 // @route POST /api/groups
 const createGroup = async (req, res) => {
@@ -26,6 +32,10 @@ const createGroup = async (req, res) => {
     const { name } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Group name is required' });
+    }
+
+    if (req.user.isSuperAdmin || req.user.email === 'admin@gmail.com') {
+      return res.status(403).json({ message: 'Super Admin accounts are global platform administrators and cannot create or participate in user groups.' });
     }
 
     // Check if user is already in a group
@@ -49,9 +59,12 @@ const createGroup = async (req, res) => {
       }
     }
 
+    const inviteToken = generateInviteToken();
+
     const group = await Group.create({
       name: name.trim(),
       inviteCode,
+      inviteToken,
       createdBy: req.user._id
     });
 
@@ -86,6 +99,10 @@ const joinGroup = async (req, res) => {
     const { inviteCode } = req.body;
     if (!inviteCode || !inviteCode.trim()) {
       return res.status(400).json({ message: 'Invite code is required' });
+    }
+
+    if (req.user.isSuperAdmin || req.user.email === 'admin@gmail.com') {
+      return res.status(403).json({ message: 'Super Admin accounts are global platform administrators and cannot join user groups.' });
     }
 
     const formattedCode = inviteCode.trim().toUpperCase();
@@ -295,7 +312,7 @@ const sendPaymentReminder = async (req, res) => {
     });
 
     sendPushToUser(targetUserId, {
-      title: '⚡ Pay Now Reminder',
+      title: 'Payment Reminder',
       body: message,
       data: { type: 'group:pay_now_reminder', targetUserId },
     });
@@ -377,9 +394,229 @@ const deleteGroup = async (req, res) => {
   }
 };
 
+// @desc Safe public preview of group invite from token or code
+// @route GET /api/groups/preview-invite/:token
+const getInvitePreview = async (req, res) => {
+  try {
+    const rawToken = (req.params.token || '').trim();
+    if (!rawToken) {
+      return res.status(400).json({ message: 'Invitation token is required' });
+    }
+
+    // Try finding by opaque inviteToken or 6-char uppercase inviteCode
+    const upperCode = rawToken.toUpperCase();
+    let group = await Group.findOne({
+      $or: [
+        { inviteToken: rawToken },
+        { inviteCode: upperCode },
+      ],
+    });
+
+    if (!group) {
+      return res.status(404).json({ message: 'Invalid or expired group invitation.' });
+    }
+
+    const memberCount = await GroupMember.countDocuments({ groupId: group._id });
+
+    // Check if current authenticated user is already in this group
+    let isAlreadyMember = false;
+    if (req.user) {
+      const membership = await GroupMember.findOne({ userId: req.user._id, groupId: group._id });
+      if (membership) {
+        isAlreadyMember = true;
+      }
+    }
+
+    return res.json({
+      groupId: group._id,
+      groupName: group.name,
+      memberCount,
+      inviteCode: group.inviteCode,
+      inviteToken: group.inviteToken,
+      isAlreadyMember,
+    });
+  } catch (error) {
+    console.error('Invite Preview Error:', error);
+    return res.status(500).json({ message: 'Server error retrieving invitation preview' });
+  }
+};
+
+// @desc Join group by secure opaque token or invite code
+// @route POST /api/groups/join-by-token
+const joinGroupByToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || !token.trim()) {
+      return res.status(400).json({ message: 'Invitation token is required' });
+    }
+
+    if (req.user.isSuperAdmin || req.user.email === 'admin@gmail.com') {
+      return res.status(403).json({ message: 'Super Admin accounts cannot join user groups.' });
+    }
+
+    const cleanToken = token.trim();
+    const upperCode = cleanToken.toUpperCase();
+
+    let group = await Group.findOne({
+      $or: [
+        { inviteToken: cleanToken },
+        { inviteCode: upperCode },
+      ],
+    });
+
+    if (!group) {
+      return res.status(404).json({ message: 'Invalid or expired group invitation.' });
+    }
+
+    // Check if user is already in ANY group
+    const existingMembership = await GroupMember.findOne({ userId: req.user._id });
+    if (existingMembership) {
+      if (existingMembership.groupId.toString() === group._id.toString()) {
+        return res.json({
+          message: 'You are already a member of this group.',
+          group,
+          role: existingMembership.role,
+          alreadyMember: true,
+        });
+      }
+      return res.status(400).json({ message: 'You are already in another group. Please leave your current group first.' });
+    }
+
+    const membership = await GroupMember.create({
+      groupId: group._id,
+      userId: req.user._id,
+      role: 'member',
+    });
+
+    await Activity.create({
+      groupId: group._id,
+      user: req.user._id,
+      action: 'joined the group via QR invite',
+    });
+
+    // Notify group members
+    emitToGroup(group._id, 'notification', {
+      type: 'group:member_joined',
+      message: `${req.user.fullName} joined ${group.name}`,
+      actorName: req.user.fullName,
+      timestamp: new Date().toISOString(),
+    }, req.user._id.toString());
+
+    sendPushToGroup(group._id, {
+      title: 'New Member Joined',
+      body: `${req.user.fullName} joined your group "${group.name}"`,
+      data: { type: 'group:member_joined', groupId: group._id.toString() },
+    }, req.user._id.toString());
+
+    return res.status(200).json({
+      message: `Successfully joined ${group.name}!`,
+      group,
+      role: membership.role,
+    });
+  } catch (error) {
+    console.error('Join By Token Error:', error);
+    return res.status(500).json({ message: 'Server error joining group' });
+  }
+};
+
+// @desc Regenerate QR invite token & invite code (Creator only)
+// @route POST /api/groups/regenerate-invite-token
+const regenerateInviteToken = async (req, res) => {
+  try {
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(404).json({ message: 'You are not part of any group.' });
+    }
+
+    if (membership.role !== 'creator') {
+      return res.status(403).json({ message: 'Only the group creator can regenerate the group QR code.' });
+    }
+
+    const group = await Group.findById(membership.groupId);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found.' });
+    }
+
+    let newCode = generateInviteCode();
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      const existing = await Group.findOne({ inviteCode: newCode });
+      if (!existing) {
+        isUnique = true;
+      } else {
+        newCode = generateInviteCode();
+        attempts++;
+      }
+    }
+
+    const newToken = generateInviteToken();
+
+    group.inviteCode = newCode;
+    group.inviteToken = newToken;
+    await group.save();
+
+    await Activity.create({
+      groupId: group._id,
+      user: req.user._id,
+      action: 'regenerated group QR invite code',
+    });
+
+    return res.json({
+      message: 'Group QR invitation regenerated successfully.',
+      inviteCode: group.inviteCode,
+      inviteToken: group.inviteToken,
+    });
+  } catch (error) {
+    console.error('Regenerate Token Error:', error);
+    return res.status(500).json({ message: 'Server error regenerating invite token' });
+  }
+};
+
+// @desc Get active group share & QR invite info
+// @route GET /api/groups/share-info
+const getGroupShareInfo = async (req, res) => {
+  try {
+    const membership = await GroupMember.findOne({ userId: req.user._id });
+    if (!membership) {
+      return res.status(404).json({ message: 'You are not part of any group.' });
+    }
+
+    let group = await Group.findById(membership.groupId);
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found.' });
+    }
+
+    // Lazily backfill inviteToken if old group record didn't have one
+    if (!group.inviteToken) {
+      group.inviteToken = generateInviteToken();
+      await group.save();
+    }
+
+    const memberCount = await GroupMember.countDocuments({ groupId: group._id });
+
+    return res.json({
+      groupId: group._id,
+      groupName: group.name,
+      inviteCode: group.inviteCode,
+      inviteToken: group.inviteToken,
+      memberCount,
+      isCreator: membership.role === 'creator',
+    });
+  } catch (error) {
+    console.error('Get Share Info Error:', error);
+    return res.status(500).json({ message: 'Server error fetching group share info' });
+  }
+};
+
 module.exports = {
   createGroup,
   joinGroup,
+  getInvitePreview,
+  joinGroupByToken,
+  regenerateInviteToken,
+  getGroupShareInfo,
   getGroupInfo,
   setPayday,
   sendPaymentReminder,

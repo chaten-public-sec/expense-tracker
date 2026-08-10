@@ -73,6 +73,10 @@ const init = (httpServer, corsOptions) => {
       console.error('[Socket.IO] Error joining group room:', err.message);
     }
 
+    // Register AI Assistant Chat Socket Handlers
+    const { registerAIChatHandlers } = require('./aiChatSocketHandler');
+    registerAIChatHandlers(socket);
+
     // Handle manual room join (e.g. after creating/joining group)
     socket.on('join-group', (groupId) => {
       if (groupId) {

@@ -76,9 +76,11 @@ export interface Settlement {
   payer: User;
   receiver: User;
   amount: number;
+  paymentMethod?: 'upi' | 'cash';
   status: 'completed' | 'paid_pending_approval' | 'will_pay_soon' | 'rejected' | 'cancelled';
   proofUrl?: string | null;
   proofPublicId?: string | null;
+  rejectionReason?: string;
   note?: string;
   paidAt?: string;
   verifiedAt?: string;

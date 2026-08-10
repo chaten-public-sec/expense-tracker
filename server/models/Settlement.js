@@ -26,6 +26,11 @@ const settlementSchema = new mongoose.Schema({
     enum: ['completed', 'paid_pending_approval', 'will_pay_soon', 'rejected', 'cancelled'],
     default: 'completed'
   },
+  paymentMethod: {
+    type: String,
+    enum: ['upi', 'cash'],
+    default: 'upi'
+  },
   proofUrl: {
     type: String,
     default: null
@@ -33,6 +38,10 @@ const settlementSchema = new mongoose.Schema({
   proofPublicId: {
     type: String,
     default: null
+  },
+  rejectionReason: {
+    type: String,
+    default: ''
   },
   note: {
     type: String,

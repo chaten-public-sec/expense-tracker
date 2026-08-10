@@ -21,6 +21,7 @@ import {
   DollarCircleOutlined,
   MobileOutlined,
   ReloadOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../components/ui/Toast';
 import { Expense, GroupMember } from '../types';
@@ -42,7 +43,7 @@ export const Expenses: React.FC = () => {
   const [filterMode, setFilterMode] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('newest');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 8;
+  const pageSize = 10;
 
   // Modals
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -70,10 +71,15 @@ export const Expenses: React.FC = () => {
   }, []);
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-    });
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return isNaN(d.getTime())
+      ? ''
+      : d.toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
   };
 
   const processedExpenses = useMemo(() => {
@@ -82,15 +88,17 @@ export const Expenses: React.FC = () => {
       const matchesSearch =
         !query ||
         exp.title.toLowerCase().includes(query) ||
-        exp.paidBy?.fullName.toLowerCase().includes(query) ||
+        exp.paidBy?.fullName?.toLowerCase().includes(query) ||
         (exp.notes && exp.notes.toLowerCase().includes(query));
       const matchesFilter = filterMode === 'all' || exp.paymentMode === filterMode;
       return matchesSearch && matchesFilter;
     });
 
     list.sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (sortBy === 'oldest') return new Date(a.date).getTime() - new Date(b.date).getTime();
+      const timeA = new Date(a.date || a.createdAt || 0).getTime();
+      const timeB = new Date(b.date || b.createdAt || 0).getTime();
+      if (sortBy === 'newest') return timeB - timeA;
+      if (sortBy === 'oldest') return timeA - timeB;
       if (sortBy === 'highest') return b.amount - a.amount;
       if (sortBy === 'lowest') return a.amount - b.amount;
       return 0;
@@ -109,22 +117,22 @@ export const Expenses: React.FC = () => {
   }, [processedExpenses, currentPage]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* Top Controls Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
         <div>
-          <Title level={4} style={{ margin: 0, fontSize: 18 }}>
+          <Title level={4} style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
             Expenses ({expenses.length})
           </Title>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            Total: ₹{totalExpenseSum.toFixed(2)}
+            Total Tracked: <strong className="financial-num" style={{ color: '#2563eb' }}>₹{totalExpenseSum.toFixed(2)}</strong>
           </Text>
         </div>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => setIsAddExpenseOpen(true)}
-          style={{ borderRadius: 10 }}
+          style={{ borderRadius: 10, background: '#2563eb', height: 38 }}
         >
           Add Expense
         </Button>
@@ -132,10 +140,10 @@ export const Expenses: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <Card style={{ borderRadius: 14 }} styles={{ body: { padding: 12 } }}>
-        <Flex vertical gap={8}>
+        <Flex vertical gap={10}>
           <Input
-            placeholder="Search bills, flatmate or notes..."
-            prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
+            placeholder="Search bills, flatmates or notes..."
+            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
@@ -143,9 +151,10 @@ export const Expenses: React.FC = () => {
             }}
             allowClear
             size="middle"
+            style={{ borderRadius: 10 }}
           />
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Segmented
               value={filterMode}
               onChange={(val) => {
@@ -157,7 +166,7 @@ export const Expenses: React.FC = () => {
                 { label: 'Cash', value: 'cash' },
                 { label: 'UPI', value: 'upi' },
               ]}
-              style={{ flex: 1 }}
+              style={{ flex: 1, minWidth: 160 }}
               size="middle"
             />
 
@@ -195,9 +204,9 @@ export const Expenses: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  borderBottom: idx !== paginatedExpenses.length - 1 ? '1px solid #f8fafc' : 'none',
-                  background: idx % 2 === 0 ? '#ffffff' : '#fafafa',
-                  transition: 'background 0.15s',
+                  borderBottom: idx !== paginatedExpenses.length - 1 ? '1px solid #f1f5f9' : 'none',
+                  background: idx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                  transition: 'background 0.15s ease',
                 }}
                 onClick={() => setSelectedExpense(exp)}
               >
@@ -205,26 +214,31 @@ export const Expenses: React.FC = () => {
                   <Text strong style={{ fontSize: 14, display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {exp.title}
                   </Text>
-                  <Space size={4} style={{ fontSize: 11 }}>
-                    <Text type="secondary">By {exp.paidBy?.fullName?.split(' ')[0]}</Text>
+                  <Space size={6} style={{ fontSize: 11, marginTop: 2 }} wrap>
+                    <Text type="secondary">Paid by {exp.paidBy?.fullName?.split(' ')[0]}</Text>
                     <Text type="secondary">•</Text>
                     <Text type="secondary">{formatDate(exp.date || exp.createdAt || '')}</Text>
                     <Tag
-                      color={exp.paymentMode === 'upi' ? 'blue' : 'default'}
+                      color={exp.paymentMode === 'upi' ? 'blue' : 'green'}
                       icon={exp.paymentMode === 'upi' ? <MobileOutlined /> : <DollarCircleOutlined />}
-                      style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px' }}
+                      style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px', borderRadius: 4 }}
                     >
                       {exp.paymentMode === 'upi' ? 'UPI' : 'Cash'}
                     </Tag>
+                    {exp.screenshotUrl && (
+                      <Tag color="cyan" style={{ margin: 0, fontSize: 10, padding: '0 4px', lineHeight: '16px', borderRadius: 4 }}>
+                        Receipt
+                      </Tag>
+                    )}
                   </Space>
                 </div>
 
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <Text strong style={{ fontSize: 15, color: '#1677ff', display: 'block' }}>
+                  <div className="financial-num" style={{ fontSize: 15, color: '#2563eb' }}>
                     ₹{exp.amount.toFixed(2)}
-                  </Text>
+                  </div>
                   <Text type="secondary" style={{ fontSize: 10 }}>
-                    {exp.splitDetails?.length || 1} split
+                    {exp.splitType === 'everyone' ? 'Split All' : `${exp.splitDetails?.length || 1} shares`}
                   </Text>
                 </div>
               </div>
@@ -232,7 +246,7 @@ export const Expenses: React.FC = () => {
           </Flex>
 
           {processedExpenses.length > pageSize && (
-            <div style={{ padding: '10px 14px', display: 'flex', justifyContent: 'center', borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'center', borderTop: '1px solid #e2e8f0' }}>
               <Pagination
                 current={currentPage}
                 pageSize={pageSize}
@@ -245,12 +259,12 @@ export const Expenses: React.FC = () => {
           )}
         </Card>
       ) : (
-        <Card style={{ borderRadius: 14, textAlign: 'center', padding: '32px 0' }}>
+        <Card style={{ borderRadius: 14, textAlign: 'center', padding: '36px 16px' }}>
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="No matching expenses found."
           >
-            <Button type="primary" onClick={() => setIsAddExpenseOpen(true)}>
+            <Button type="primary" onClick={() => setIsAddExpenseOpen(true)} style={{ borderRadius: 10, background: '#2563eb' }}>
               Add First Expense
             </Button>
           </Empty>
