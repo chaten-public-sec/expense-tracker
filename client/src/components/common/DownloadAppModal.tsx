@@ -15,7 +15,7 @@ const { Title, Text } = Typography;
 export const APP_VERSION = import.meta.env.VITE_APP_VERSION || '1.0.0';
 export const DOWNLOAD_URL =
   import.meta.env.VITE_ANDROID_DOWNLOAD_URL ||
-  'https://github.com/chaten-public-sec/expense-tracker/releases/latest/download/SplitWise.apk';
+  'https://github.com/puspendeerrr/expense-tracker/releases/latest/download/SplitWise.apk';
 
 /**
  * Helper to check if running inside Capacitor Android/iOS native runtime
