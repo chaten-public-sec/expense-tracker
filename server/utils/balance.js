@@ -4,8 +4,8 @@ const Settlement = require('../models/Settlement');
 
 /**
  * Dynamically computes pairwise balances and breakdown metrics for a group.
- * Returns detailed balance structure for all group members including
- * everyone (group-wide) vs specific (individual) split shares and pairwise member breakdown.
+ * Preserves individual transaction obligations without forcefully netting
+ * bidirectional debts against each other.
  */
 const calculateGroupBalances = async (groupId, currentUserId = null) => {
   // 1. Fetch group members
@@ -100,55 +100,35 @@ const calculateGroupBalances = async (groupId, currentUserId = null) => {
     }
   });
 
-  // 4. Simplify pairwise balances (Net debt graph)
-  const netDebtGraph = {};
+  // 4. Populate direct pairwise breakdown per member (Direct non-netted debts)
+  const directDebtGraph = {};
   memberIds.forEach(id => {
-    netDebtGraph[id] = {};
+    directDebtGraph[id] = {};
   });
 
-  for (let i = 0; i < memberIds.length; i++) {
-    for (let j = i + 1; j < memberIds.length; j++) {
-      const u1 = memberIds[i];
-      const u2 = memberIds[j];
-
-      const rawU1OwesU2 = debtGraph[u1][u2] || 0;
-      const rawU2OwesU1 = debtGraph[u2][u1] || 0;
-
-      const netDifference = rawU1OwesU2 - rawU2OwesU1;
-
-      if (netDifference > 0) {
-        netDebtGraph[u1][u2] = Math.round(netDifference * 100) / 100;
-        netDebtGraph[u2][u1] = 0;
-      } else if (netDifference < 0) {
-        netDebtGraph[u2][u1] = Math.round(Math.abs(netDifference) * 100) / 100;
-        netDebtGraph[u1][u2] = 0;
-      } else {
-        netDebtGraph[u1][u2] = 0;
-        netDebtGraph[u2][u1] = 0;
-      }
-    }
-  }
-
-  // Calculate net totals and populate pairwise breakdown per member
   memberIds.forEach(u1 => {
     memberIds.forEach(u2 => {
       if (u1 !== u2) {
-        const owed = netDebtGraph[u1][u2] || 0;
+        const rawOwed = debtGraph[u1][u2] || 0;
+        const owed = Math.max(0, Math.round(rawOwed * 100) / 100);
+        directDebtGraph[u1][u2] = owed;
+
         if (owed > 0) {
-          const roundedOwed = Math.round(owed * 100) / 100;
-          totalOwesMap[u1] += roundedOwed;
-          totalReceivesMap[u2] += roundedOwed;
+          totalOwesMap[u1] += owed;
+          totalReceivesMap[u2] += owed;
 
           pairwiseOwesMap[u1].push({
             user: memberMap[u2],
-            amount: roundedOwed
+            amount: owed
           });
 
           pairwiseReceivesMap[u2].push({
             user: memberMap[u1],
-            amount: roundedOwed
+            amount: owed
           });
         }
+      } else {
+        directDebtGraph[u1][u2] = 0;
       }
     });
   });
@@ -179,7 +159,7 @@ const calculateGroupBalances = async (groupId, currentUserId = null) => {
 
   return {
     memberMap,
-    netDebtGraph,
+    netDebtGraph: directDebtGraph,
     totalPaidMap,
     everyoneShareMap,
     specificShareMap,

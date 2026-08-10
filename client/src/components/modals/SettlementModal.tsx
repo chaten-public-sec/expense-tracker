@@ -3,15 +3,14 @@ import {
   Modal,
   Button,
   Input,
+  InputNumber,
   Typography,
   Alert,
   Space,
-  Tag,
   Card,
   Image,
   Upload,
   Divider,
-  Segmented,
   Row,
   Col,
 } from 'antd';
@@ -21,17 +20,19 @@ import {
   CheckOutlined,
   UploadOutlined,
   QrcodeOutlined,
-  CreditCardOutlined,
   ClockCircleOutlined,
-  SendOutlined,
   DollarOutlined,
   ThunderboltOutlined,
+  ArrowLeftOutlined,
   InfoCircleOutlined,
+  BankOutlined,
+  WalletOutlined,
 } from '@ant-design/icons';
 import { useToast } from '../ui/Toast';
-import { Settlement, OwedPerson } from '../../types';
+import { Settlement, OwedPerson, User } from '../../types';
 import api from '../../services/api';
-import { launchAppSpecificUPI, UPI_APPS, UPIAppType } from '../../utils/upiHelper';
+import { launchUpiPayment } from '../../utils/upiHelper';
+import { UPIDetailModal } from './UPIDetailModal';
 
 const { Title, Text } = Typography;
 
@@ -52,65 +53,83 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
 }) => {
   const { showSuccess, showError } = useToast();
 
-  const [paymentMode, setPaymentMode] = useState<'paid' | 'will_pay_soon'>('paid');
+  const recipient = targetPerson?.user;
+  const initialOwedAmount = targetPerson?.amount || 0;
+
+  const [amount, setAmount] = useState<number>(initialOwedAmount);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [proofPublicId, setProofPublicId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedUpi, setCopiedUpi] = useState(false);
-  const [copiedAmount, setCopiedAmount] = useState(false);
+
+  // Online Flow: 'initial' | 'proof_step'
+  const [onlineStep, setOnlineStep] = useState<'initial' | 'proof_step'>('initial');
+  const [isQRModalOpen, setIsQRModalOpen] = useState(false);
+  const [isCashConfirmOpen, setIsCashConfirmOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setPaymentMode('paid');
+      setAmount(initialOwedAmount);
       setProofUrl(null);
       setProofPublicId(null);
       setNote('');
       setCopiedUpi(false);
-      setCopiedAmount(false);
+      setOnlineStep('initial');
     }
-  }, [isOpen, targetPerson]);
+  }, [isOpen, targetPerson, initialOwedAmount]);
 
-  const recipient = targetPerson?.user;
-  const amountToPay = targetPerson?.amount || 0;
-
-  const handleLaunchApp = (appId: UPIAppType) => {
-    if (!recipient?.upiId) {
-      showError('Recipient has not configured their UPI ID');
-      return;
-    }
-
-    launchAppSpecificUPI(
-      appId,
-      {
-        upiId: recipient.upiId,
-        name: recipient.fullName,
-        amount: amountToPay,
-        note: `SplitWise Payment to ${recipient.fullName}`,
-      },
-      () => {
-        showSuccess('Opening payment app... Or scan QR / copy UPI ID below.');
-      }
-    );
-  };
-
-  const copyAmount = () => {
-    navigator.clipboard.writeText(amountToPay.toFixed(2));
-    setCopiedAmount(true);
-    showSuccess(`Amount ₹${amountToPay.toFixed(2)} copied to clipboard!`);
-    setTimeout(() => setCopiedAmount(false), 2000);
-  };
+  if (!recipient) return null;
 
   const copyUPI = () => {
-    if (recipient?.upiId) {
+    if (recipient.upiId) {
       navigator.clipboard.writeText(recipient.upiId);
       setCopiedUpi(true);
-      showSuccess(`UPI ID ${recipient.upiId} copied!`);
+      showSuccess(`UPI ID ${recipient.upiId} copied to clipboard!`);
       setTimeout(() => setCopiedUpi(false), 2000);
     }
   };
 
+  // 1. Handle "Pay Online"
+  const handlePayOnline = async () => {
+    if (!recipient.upiId) {
+      showError(`${recipient.fullName} has not added a UPI ID yet. Please use QR Code or Cash.`);
+      setIsQRModalOpen(true);
+      return;
+    }
+
+    const payAmount = Number(amount) || initialOwedAmount;
+    if (payAmount <= 0) {
+      showError('Please enter a valid amount to pay');
+      return;
+    }
+
+    try {
+      const result = await launchUpiPayment(
+        {
+          upiId: recipient.upiId,
+          name: recipient.fullName,
+          amount: payAmount,
+          note: `SplitWise - Payment to ${recipient.fullName}`,
+        },
+        () => {
+          // Desktop Fallback
+          showSuccess('UPI intent opened. If on desktop, scan the QR code below.');
+          setIsQRModalOpen(true);
+        }
+      );
+
+      // Move directly to the proof upload verification screen
+      setOnlineStep('proof_step');
+    } catch (err: any) {
+      console.error('[Launch UPI Error]:', err);
+      showError('Could not launch payment app. Please scan the QR code.');
+      setIsQRModalOpen(true);
+    }
+  };
+
+  // 2. Handle Payment Screenshot Upload
   const handleProofUpload = async (file: File) => {
     const formData = new FormData();
     formData.append('image', file);
@@ -122,7 +141,7 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
       });
       setProofUrl(res.data.imageUrl);
       setProofPublicId(res.data.publicId);
-      showSuccess('Payment proof screenshot uploaded!');
+      showSuccess('Payment proof screenshot attached!');
     } catch (err: any) {
       console.error('Proof Upload Error:', err);
       showError('Failed to upload proof screenshot');
@@ -131,26 +150,27 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
     }
   };
 
-  const handleSubmit = async () => {
-    if (!recipient) return;
+  // 3. Submit Online UPI Settlement (Mandates Screenshot)
+  const handleSubmitOnlineSettlement = async () => {
+    if (!proofUrl) {
+      showError('Payment proof screenshot is required for online UPI payments.');
+      return;
+    }
+
+    const finalAmount = Number(amount) || initialOwedAmount;
 
     try {
       setIsSubmitting(true);
       await api.post('/settlements', {
         receiverId: recipient._id,
-        amount: amountToPay,
-        actionType: paymentMode,
+        amount: finalAmount,
+        paymentMethod: 'upi',
         proofUrl,
         proofPublicId,
         note,
       });
 
-      if (paymentMode === 'paid') {
-        showSuccess(`Payment of ₹${amountToPay.toFixed(2)} submitted to ${recipient.fullName}!`);
-      } else {
-        showSuccess(`Notified ${recipient.fullName} that you will pay soon.`);
-      }
-
+      showSuccess(`Payment of ₹${finalAmount.toFixed(2)} submitted for ${recipient.fullName}'s verification!`);
       onSettlementUpdated();
       onClose();
     } catch (err: any) {
@@ -161,249 +181,374 @@ export const SettlementModal: React.FC<SettlementModalProps> = ({
     }
   };
 
-  if (!recipient) return null;
+  // 4. Submit Cash Settlement (No screenshot required, receiver confirms)
+  const handleConfirmCashPayment = async () => {
+    const finalAmount = Number(amount) || initialOwedAmount;
+
+    try {
+      setIsSubmitting(true);
+      await api.post('/settlements', {
+        receiverId: recipient._id,
+        amount: finalAmount,
+        paymentMethod: 'cash',
+        note: note || 'Paid in Cash',
+      });
+
+      showSuccess(`Marked ₹${finalAmount.toFixed(2)} as paid in cash. ${recipient.fullName} will confirm receipt.`);
+      setIsCashConfirmOpen(false);
+      onSettlementUpdated();
+      onClose();
+    } catch (err: any) {
+      console.error('Cash Settlement Error:', err);
+      showError(err.response?.data?.message || 'Failed to submit cash settlement');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // 5. Submit "Will Pay Soon" Promise
+  const handleSendPromiseNotice = async () => {
+    const finalAmount = Number(amount) || initialOwedAmount;
+    try {
+      setIsSubmitting(true);
+      await api.post('/settlements', {
+        receiverId: recipient._id,
+        amount: finalAmount,
+        actionType: 'will_pay_soon',
+        note,
+      });
+
+      showSuccess(`Notified ${recipient.fullName} that you will pay soon.`);
+      onSettlementUpdated();
+      onClose();
+    } catch (err: any) {
+      console.error('Promise Notice Error:', err);
+      showError(err.response?.data?.message || 'Failed to send promise notice');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <Modal
-      open={isOpen}
-      onCancel={onClose}
-      title={
-        <Space align="center">
-          <DollarOutlined style={{ color: '#1677ff' }} />
-          <span>Settle Payment with {recipient.fullName}</span>
-        </Space>
-      }
-      footer={[
-        <Button key="cancel" onClick={onClose}>
-          Cancel
-        </Button>,
-        <Button
-          key="submit"
-          type="primary"
-          loading={isSubmitting}
-          icon={paymentMode === 'paid' ? <CheckCircleOutlined /> : <SendOutlined />}
-          onClick={handleSubmit}
-        >
-          {paymentMode === 'paid' ? 'Confirm Payment' : 'Send Promise Notice'}
-        </Button>,
-      ]}
-      width={500}
-      centered
-      style={{ maxWidth: '96vw' }}
-    >
-      <div style={{ padding: '4px 0' }}>
-        {/* Amount & Quick Copy Header Card */}
-        <Card
-          size="small"
-          style={{
-            background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
-            color: '#ffffff',
-            borderRadius: 14,
-            textAlign: 'center',
-            marginBottom: 14,
-            boxShadow: '0 4px 14px rgba(22, 119, 255, 0.25)',
-          }}
-          styles={{ body: { padding: '14px 12px' } }}
-        >
-          <Text style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.85)', display: 'block' }}>
-            Calculated Dues to Pay
-          </Text>
-          <Title level={2} style={{ margin: '2px 0 8px', color: '#ffffff', fontWeight: 800 }}>
-            ₹{amountToPay.toFixed(2)}
-          </Title>
-
-          <Button
-            size="small"
-            onClick={copyAmount}
-            icon={copiedAmount ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
-            style={{
-              borderRadius: 20,
-              fontSize: 11,
-              fontWeight: 600,
-              background: 'rgba(255, 255, 255, 0.2)',
-              color: '#ffffff',
-              borderColor: 'transparent',
-              backdropFilter: 'blur(4px)',
-            }}
-          >
-            {copiedAmount ? 'Copied ₹' + amountToPay.toFixed(2) : '1-Tap Copy Amount (₹' + amountToPay.toFixed(2) + ')'}
-          </Button>
-        </Card>
-
-        {/* 1. App-Specific UPI Launcher Grid (Google Pay, PhonePe, Paytm, MobiKwik, BHIM, Cred) */}
-        {recipient.upiId ? (
+    <>
+      <Modal
+        open={isOpen}
+        onCancel={onClose}
+        title={
+          <Space align="center">
+            <DollarOutlined style={{ color: '#2563eb' }} />
+            <span>Pay {recipient.fullName}</span>
+          </Space>
+        }
+        footer={null}
+        width={460}
+        centered
+        style={{ maxWidth: '96vw' }}
+      >
+        <div style={{ padding: '6px 0' }}>
+          {/* Header Card: Recipient Dues & Amount Input */}
           <Card
             size="small"
-            title={
-              <Space size={6}>
-                <ThunderboltOutlined style={{ color: '#faad14' }} />
-                <Text strong style={{ fontSize: 12 }}>1. Select Installed App to Pay</Text>
-              </Space>
-            }
-            style={{ borderRadius: 12, marginBottom: 14, background: '#fafafa' }}
-            styles={{ body: { padding: '10px 12px' } }}
+            style={{
+              background: '#f8fafc',
+              borderRadius: 14,
+              border: '1px solid #e2e8f0',
+              marginBottom: 16,
+              textAlign: 'center',
+            }}
+            styles={{ body: { padding: '16px 14px' } }}
           >
-            <Row gutter={[8, 8]}>
-              {UPI_APPS.map((app) => (
-                <Col span={12} sm={8} key={app.id}>
+            <Text type="secondary" style={{ fontSize: 11, display: 'block', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Amount to Settle
+            </Text>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '6px 0 10px' }}>
+              <span style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', marginRight: 4 }}>₹</span>
+              <InputNumber
+                value={amount}
+                onChange={(val) => setAmount(val || 0)}
+                min={0.01}
+                precision={2}
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                  width: 140,
+                  textAlign: 'center',
+                  borderRadius: 10,
+                }}
+              />
+            </div>
+
+            {amount !== initialOwedAmount && (
+              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 6 }}>
+                Paying ₹{amount?.toFixed(2)} of ₹{initialOwedAmount.toFixed(2)} owed
+              </Text>
+            )}
+
+            {/* Recipient UPI ID */}
+            {recipient.upiId ? (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: '#ffffff',
+                  padding: '4px 10px',
+                  borderRadius: 20,
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <Text style={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                  UPI: {recipient.upiId}
+                </Text>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={copiedUpi ? <CheckOutlined style={{ color: '#16a34a' }} /> : <CopyOutlined />}
+                  onClick={copyUPI}
+                  style={{ padding: '0 4px', height: 20, fontSize: 11 }}
+                />
+              </div>
+            ) : (
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                No UPI ID configured by {recipient.fullName}
+              </Text>
+            )}
+          </Card>
+
+          {/* Online Proof Step View */}
+          {onlineStep === 'proof_step' ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ArrowLeftOutlined />}
+                  onClick={() => setOnlineStep('initial')}
+                >
+                  Back
+                </Button>
+                <Text strong style={{ fontSize: 14, color: '#0f172a' }}>
+                  Did you complete the payment?
+                </Text>
+              </div>
+
+              <Alert
+                message="Payment Proof Required"
+                description="Upload the payment confirmation screenshot so the receiver can verify your payment."
+                type="info"
+                showIcon
+                style={{ borderRadius: 10, marginBottom: 14, fontSize: 12 }}
+              />
+
+              {/* Upload Proof Area */}
+              {proofUrl ? (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    background: '#f0fdf4',
+                    padding: 10,
+                    borderRadius: 10,
+                    border: '1px solid #bbf7d0',
+                    marginBottom: 14,
+                  }}
+                >
+                  <Image
+                    src={proofUrl}
+                    width={52}
+                    height={52}
+                    style={{ objectFit: 'cover', borderRadius: 8 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <Text type="success" strong style={{ fontSize: 12, display: 'block' }}>
+                      Screenshot Attached!
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      Ready to send for verification
+                    </Text>
+                  </div>
                   <Button
-                    block
-                    onClick={() => handleLaunchApp(app.id)}
-                    style={{
-                      height: 42,
-                      borderRadius: 10,
-                      fontWeight: 600,
-                      fontSize: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderColor: '#e2e8f0',
-                      background: app.badgeBg,
-                      color: app.color,
+                    size="small"
+                    danger
+                    onClick={() => {
+                      setProofUrl(null);
+                      setProofPublicId(null);
                     }}
                   >
-                    {app.name}
+                    Change
                   </Button>
-                </Col>
-              ))}
-            </Row>
-            <Text type="secondary" style={{ fontSize: 10, display: 'block', marginTop: 8, textAlign: 'center' }}>
-              💡 Opens recipient VPA directly in your app without NPCI ₹2K blocks or WhatsApp redirects.
-            </Text>
-          </Card>
-        ) : (
-          <Alert
-            message="No UPI ID Found"
-            description="Recipient has not configured their UPI ID yet. Use QR Code scan or Phone number below."
-            type="warning"
-            showIcon
-            style={{ borderRadius: 10, marginBottom: 14, fontSize: 12 }}
-          />
-        )}
+                </div>
+              ) : (
+                <Upload
+                  beforeUpload={(file) => {
+                    handleProofUpload(file);
+                    return false;
+                  }}
+                  showUploadList={false}
+                  accept="image/*"
+                >
+                  <Button
+                    block
+                    icon={<UploadOutlined />}
+                    loading={isUploading}
+                    style={{
+                      height: 48,
+                      borderRadius: 10,
+                      marginBottom: 14,
+                      borderColor: '#2563eb',
+                      color: '#2563eb',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {isUploading ? 'Uploading Screenshot...' : 'Upload Payment Screenshot'}
+                  </Button>
+                </Upload>
+              )}
 
-        {/* 2. QR Code & UPI Details (Scan or Manual Copy) */}
-        <Card
-          size="small"
-          title={
-            <Space size={6}>
-              <QrcodeOutlined style={{ color: '#1677ff' }} />
-              <Text strong style={{ fontSize: 12 }}>2. Scan QR Code or Copy UPI VPA</Text>
-            </Space>
-          }
-          style={{ borderRadius: 12, marginBottom: 14, background: '#ffffff' }}
-          styles={{ body: { padding: 12, textAlign: 'center' } }}
-        >
-          {recipient.qrCodeUrl ? (
-            <div style={{ marginBottom: 10 }}>
-              <Image
-                src={recipient.qrCodeUrl}
-                alt="Recipient Payment QR Code"
-                width={160}
-                height={160}
-                style={{ objectFit: 'contain', borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.04)' }}
+              <Input.TextArea
+                rows={2}
+                placeholder="Add optional note (e.g. UTR / Ref Number)..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                style={{ borderRadius: 10, marginBottom: 16 }}
               />
-              <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 6 }}>
-                Scan image directly with GPay, PhonePe, Paytm, or MobiKwik
-              </Text>
-            </div>
-          ) : (
-            <Alert
-              message="No QR Code Image Uploaded"
-              description="Recipient has not uploaded a QR screenshot. Use UPI ID below."
-              type="info"
-              showIcon
-              style={{ borderRadius: 8, marginBottom: 10, fontSize: 12 }}
-            />
-          )}
 
-          {recipient.upiId ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-              <Space size={8}>
-                <CreditCardOutlined style={{ color: '#1677ff' }} />
-                <Text code style={{ fontSize: 13, fontWeight: 600 }}>
-                  {recipient.upiId}
-                </Text>
-              </Space>
               <Button
-                size="small"
-                icon={copiedUpi ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
-                onClick={copyUPI}
+                type="primary"
+                block
+                size="large"
+                loading={isSubmitting}
+                disabled={!proofUrl}
+                icon={<CheckCircleOutlined />}
+                onClick={handleSubmitOnlineSettlement}
+                style={{
+                  height: 46,
+                  borderRadius: 10,
+                  backgroundColor: proofUrl ? '#2563eb' : undefined,
+                  fontWeight: 600,
+                }}
               >
-                {copiedUpi ? 'Copied' : 'Copy UPI'}
+                Send for Verification
               </Button>
             </div>
           ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              Phone: {recipient.phone || recipient.email}
-            </Text>
-          )}
-        </Card>
+            /* Primary Payment Screen View (Two Primary Actions) */
+            <div>
+              <Text strong style={{ fontSize: 12, color: '#64748b', display: 'block', marginBottom: 10, textTransform: 'uppercase' }}>
+                Choose Payment Method
+              </Text>
 
-        {/* 3. Action Toggle: Paid vs Will Pay Soon */}
-        <div style={{ marginBottom: 14 }}>
-          <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-            3. Select Payment Status
-          </Text>
-          <Segmented
-            block
-            value={paymentMode}
-            onChange={(val) => setPaymentMode(val as 'paid' | 'will_pay_soon')}
-            options={[
-              { label: 'I Have Paid', value: 'paid', icon: <CheckCircleOutlined /> },
-              { label: 'Will Pay Soon', value: 'will_pay_soon', icon: <ClockCircleOutlined /> },
-            ]}
-          />
-        </div>
+              {/* 1. Primary Action: Pay Online */}
+              <Button
+                type="primary"
+                block
+                size="large"
+                icon={<ThunderboltOutlined />}
+                onClick={handlePayOnline}
+                style={{
+                  height: 50,
+                  borderRadius: 12,
+                  backgroundColor: '#2563eb',
+                  fontWeight: 700,
+                  fontSize: 15,
+                  marginBottom: 10,
+                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.25)',
+                }}
+              >
+                Pay Online
+              </Button>
 
-        {paymentMode === 'paid' ? (
-          <div>
-            <Text strong style={{ fontSize: 12, display: 'block', marginBottom: 6 }}>
-              4. Upload Payment Proof Screenshot (Optional)
-            </Text>
-            {proofUrl ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f6ffed', padding: 8, borderRadius: 8, border: '1px solid #b7eb8f', marginBottom: 10 }}>
-                <Image src={proofUrl} width={50} height={50} style={{ objectFit: 'cover', borderRadius: 6 }} />
-                <div style={{ flex: 1 }}>
-                  <Text type="success" strong style={{ fontSize: 12, display: 'block' }}>Proof Attached!</Text>
-                  <Text type="secondary" style={{ fontSize: 10 }}>Saved on Cloudinary</Text>
-                </div>
-                <Button size="small" danger onClick={() => { setProofUrl(null); setProofPublicId(null); }}>
-                  Remove
+              {/* 2. Secondary Action: Pay with Cash */}
+              <Button
+                block
+                size="large"
+                icon={<DollarOutlined style={{ color: '#16a34a' }} />}
+                onClick={() => setIsCashConfirmOpen(true)}
+                style={{
+                  height: 46,
+                  borderRadius: 12,
+                  fontWeight: 600,
+                  fontSize: 14,
+                  borderColor: '#e2e8f0',
+                  color: '#0f172a',
+                  marginBottom: 16,
+                }}
+              >
+                Pay with Cash
+              </Button>
+
+              {/* Fallback Options: Show QR / Copy UPI */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: '#f8fafc',
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  marginBottom: 14,
+                }}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<QrcodeOutlined style={{ color: '#2563eb' }} />}
+                  onClick={() => setIsQRModalOpen(true)}
+                  style={{ fontSize: 12, fontWeight: 500 }}
+                >
+                  Show QR Code
+                </Button>
+
+                <Divider type="vertical" />
+
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ClockCircleOutlined style={{ color: '#64748b' }} />}
+                  onClick={handleSendPromiseNotice}
+                  style={{ fontSize: 12, color: '#64748b' }}
+                >
+                  I'll Pay Later
                 </Button>
               </div>
-            ) : (
-              <Upload
-                beforeUpload={(file) => {
-                  handleProofUpload(file);
-                  return false;
-                }}
-                showUploadList={false}
-                accept="image/*"
-              >
-                <Button icon={<UploadOutlined />} loading={isUploading} style={{ width: '100%', borderRadius: 8, marginBottom: 10 }}>
-                  {isUploading ? 'Uploading Screenshot...' : 'Upload Payment Screenshot'}
-                </Button>
-              </Upload>
-            )}
+            </div>
+          )}
+        </div>
+      </Modal>
 
-            <Input.TextArea
-              rows={2}
-              placeholder="Add optional note (e.g. Paid via MobiKwik Ref #12345)..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              style={{ borderRadius: 8 }}
-            />
-          </div>
-        ) : (
-          <Alert
-            message="Promise Notice"
-            description={`We will notify ${recipient.fullName} that you plan to pay soon.`}
-            type="warning"
-            showIcon
-            style={{ borderRadius: 8 }}
-          />
-        )}
-      </div>
-    </Modal>
+      {/* Cash Payment Confirmation Dialog */}
+      <Modal
+        open={isCashConfirmOpen}
+        onCancel={() => setIsCashConfirmOpen(false)}
+        title="Confirm Cash Payment"
+        okText="Mark as Paid in Cash"
+        cancelText="Cancel"
+        confirmLoading={isSubmitting}
+        onOk={handleConfirmCashPayment}
+        centered
+        width={400}
+      >
+        <p style={{ margin: '10px 0', fontSize: 13, color: '#334155' }}>
+          Mark <strong>₹{amount?.toFixed(2)}</strong> as paid in cash to <strong>{recipient.fullName}</strong>?
+        </p>
+        <Alert
+          type="info"
+          showIcon
+          message="No payment screenshot is required for cash payments. We will notify the receiver to confirm receipt."
+          style={{ fontSize: 12, borderRadius: 8 }}
+        />
+      </Modal>
+
+      {/* QR Viewer Fallback Modal */}
+      <UPIDetailModal
+        isOpen={isQRModalOpen}
+        onClose={() => setIsQRModalOpen(false)}
+        user={recipient}
+        amountToPay={amount}
+      />
+    </>
   );
 };

@@ -13,6 +13,11 @@ const groupSchema = new mongoose.Schema({
     uppercase: true,
     length: 6
   },
+  inviteToken: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

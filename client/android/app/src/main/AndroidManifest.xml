@@ -35,6 +35,14 @@
         </provider>
     </application>
 
+    <!-- Android 11+ Package Visibility for Installed UPI Apps -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

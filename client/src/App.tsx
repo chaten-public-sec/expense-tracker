@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, App as AntdApp, Spin } from 'antd';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -6,7 +6,6 @@ import { SocketProvider } from './context/SocketContext';
 import { ToastProvider } from './components/ui/Toast';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Navbar } from './components/layout/Navbar';
-import { BottomNav } from './components/layout/BottomNav';
 
 const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
 const Signup = lazy(() => import('./pages/Signup').then(m => ({ default: m.Signup })));
@@ -17,6 +16,12 @@ const Members = lazy(() => import('./pages/Members').then(m => ({ default: m.Mem
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const History = lazy(() => import('./pages/History').then(m => ({ default: m.History })));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ default: m.JoinGroupPage })));
+
+import { DesktopSidebar } from './components/layout/DesktopSidebar';
+
+import { AIChatButton } from './components/ai/AIChatButton';
+import { AIChatDrawer } from './components/ai/AIChatDrawer';
 
 const PageLoader: React.FC = () => (
   <div
@@ -38,6 +43,7 @@ const PageLoader: React.FC = () => (
 const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, group, isLoading } = useAuth();
   const location = useLocation();
+  const [isAIChatOpen, setIsAIChatOpen] = useState(false);
 
   if (isLoading) {
     return <PageLoader />;
@@ -49,21 +55,51 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
   const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
 
-  if (!group && !isSuperAdmin && location.pathname !== '/no-group' && location.pathname !== '/profile' && location.pathname !== '/admin') {
-    return <Navigate to="/no-group" replace />;
-  }
-
-  if (group && location.pathname === '/no-group') {
-    return <Navigate to="/dashboard" replace />;
+  // Strict Architectural Separation:
+  if (isSuperAdmin) {
+    // Super Admin is a global platform administrator and only visits /admin and /profile
+    if (location.pathname !== '/admin' && location.pathname !== '/profile') {
+      return <Navigate to="/admin" replace />;
+    }
+  } else {
+    // Normal User Flow:
+    if (!group && location.pathname !== '/no-group' && location.pathname !== '/profile') {
+      return <Navigate to="/no-group" replace />;
+    }
+    if (group && location.pathname === '/no-group') {
+      return <Navigate to="/dashboard" replace />;
+    }
+    if (location.pathname === '/admin') {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   return (
-    <div className="mobile-app-container">
-      <Navbar />
-      <main style={{ flex: 1, padding: '12px 12px 76px', width: '100%' }}>
-        {children}
-      </main>
-      {(group || isSuperAdmin) && <BottomNav />}
+    <div className="app-shell-layout">
+      {/* Left Sider on Desktop */}
+      <DesktopSidebar />
+
+      {/* Main Column */}
+      <div className="app-main-column">
+        <Navbar />
+        <main className="app-content-container">
+          {children}
+        </main>
+      </div>
+
+      {/* Floating AI Assistant (for Normal Group Users) */}
+      {!isSuperAdmin && group && (
+        <>
+          <AIChatButton
+            onClick={() => setIsAIChatOpen(true)}
+            isOpen={isAIChatOpen}
+          />
+          <AIChatDrawer
+            isOpen={isAIChatOpen}
+            onClose={() => setIsAIChatOpen(false)}
+          />
+        </>
+      )}
     </div>
   );
 };
@@ -119,9 +155,10 @@ export const App: React.FC = () => {
               >
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    {/* Public Auth Routes */}
+                    {/* Public Auth Routes & Deep Links */}
                     <Route path="/login" element={<Login />} />
                     <Route path="/signup" element={<Signup />} />
+                    <Route path="/join/:token" element={<JoinGroupPage />} />
 
                     {/* Protected Routes */}
                     <Route

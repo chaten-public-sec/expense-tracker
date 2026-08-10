@@ -96,6 +96,7 @@ const login = async (req, res) => {
       phone: user.phone,
       upiId: user.upiId || '',
       qrCodeUrl: user.qrCodeUrl || null,
+      isSuperAdmin: !!user.isSuperAdmin,
       group,
       role,
       token

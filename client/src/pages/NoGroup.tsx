@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -11,7 +11,7 @@ import {
   Alert,
   Modal,
   Select,
-  Flex,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -19,14 +19,16 @@ import {
   CopyOutlined,
   CheckOutlined,
   LogoutOutlined,
-  TeamOutlined,
+  QrcodeOutlined,
+  ShareAltOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import api from '../services/api';
+import { QRScannerModal } from '../components/modals/QRScannerModal';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 
 const GROUP_CATEGORIES = [
   { label: 'Roommates / Flatmates', value: 'Flatmates' },
@@ -48,11 +50,20 @@ export const NoGroup: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Created Group Code Result Modal
   const [createdGroupCode, setCreatedGroupCode] = useState<string | null>(null);
   const [createdGroupName, setCreatedGroupName] = useState('');
   const [copied, setCopied] = useState(false);
+
+  // Check if there was a preserved join token from scanning while logged out
+  useEffect(() => {
+    const pendingToken = sessionStorage.getItem('pending_join_token');
+    if (pendingToken) {
+      navigate(`/join/${pendingToken}`);
+    }
+  }, [navigate]);
 
   const handleCreateGroup = async (values: any) => {
     setError('');
@@ -113,6 +124,10 @@ export const NoGroup: React.FC = () => {
     }
   };
 
+  const handleScanSuccess = (tokenOrCode: string) => {
+    navigate(`/join/${tokenOrCode}`);
+  };
+
   const copyCreatedCode = () => {
     if (createdGroupCode) {
       navigator.clipboard.writeText(createdGroupCode);
@@ -148,7 +163,7 @@ export const NoGroup: React.FC = () => {
 
       {error && (
         <Alert
-          title={error}
+          message={error}
           type="error"
           showIcon
           closable
@@ -158,7 +173,7 @@ export const NoGroup: React.FC = () => {
       )}
 
       <Card style={{ borderRadius: 14 }} styles={{ body: { padding: 18 } }}>
-        {/* Mobile Segmented Toggle */}
+        {/* Toggle between Create and Join */}
         <Segmented
           value={activeTab}
           onChange={(val) => {
@@ -179,7 +194,7 @@ export const NoGroup: React.FC = () => {
               label: (
                 <Space size={4} style={{ padding: '4px 0' }}>
                   <LoginOutlined />
-                  <span>Join with Code</span>
+                  <span>Join a Group</span>
                 </Space>
               ),
               value: 'join',
@@ -219,52 +234,75 @@ export const NoGroup: React.FC = () => {
               block
               loading={isLoading}
               icon={<PlusOutlined />}
-              style={{ marginTop: 8 }}
+              style={{ marginTop: 8, height: 46, borderRadius: 10, backgroundColor: '#2563eb' }}
             >
               Create Group
             </Button>
           </Form>
         ) : (
-          <Form
-            form={joinForm}
-            layout="vertical"
-            onFinish={handleJoinGroup}
-            requiredMark={false}
-          >
-            <Form.Item
-              label={<Text strong style={{ fontSize: 13 }}>6-Character Invite Code</Text>}
-              name="inviteCode"
-              rules={[
-                { required: true, message: 'Please enter the 6-character group invite code' },
-                { len: 6, message: 'Code must be exactly 6 characters' },
-              ]}
+          <div>
+            <Form
+              form={joinForm}
+              layout="vertical"
+              onFinish={handleJoinGroup}
+              requiredMark={false}
             >
-              <Input
-                placeholder="e.g. AB12CD"
-                maxLength={6}
-                size="large"
-                style={{
-                  textTransform: 'uppercase',
-                  letterSpacing: 4,
-                  fontFamily: 'monospace',
-                  fontWeight: 700,
-                  textAlign: 'center',
-                }}
-              />
-            </Form.Item>
+              <Form.Item
+                label={<Text strong style={{ fontSize: 13 }}>Enter 6-Character Invite Code</Text>}
+                name="inviteCode"
+                rules={[
+                  { required: true, message: 'Please enter the 6-character group invite code' },
+                  { len: 6, message: 'Code must be exactly 6 characters' },
+                ]}
+              >
+                <Input
+                  placeholder="e.g. AB12CD"
+                  maxLength={6}
+                  size="large"
+                  style={{
+                    textTransform: 'uppercase',
+                    letterSpacing: 4,
+                    fontFamily: 'monospace',
+                    fontWeight: 700,
+                    textAlign: 'center',
+                    borderRadius: 10,
+                  }}
+                />
+              </Form.Item>
 
+              <Button
+                type="primary"
+                htmlType="submit"
+                size="large"
+                block
+                loading={isLoading}
+                icon={<LoginOutlined />}
+                style={{ height: 46, borderRadius: 10, backgroundColor: '#2563eb' }}
+              >
+                Join with Code
+              </Button>
+            </Form>
+
+            <Divider plain style={{ margin: '16px 0', fontSize: 12, color: '#94a3b8' }}>
+              OR
+            </Divider>
+
+            {/* QR Scan Action */}
             <Button
-              type="primary"
-              htmlType="submit"
-              size="large"
               block
-              loading={isLoading}
-              icon={<LoginOutlined />}
-              style={{ marginTop: 8 }}
+              size="large"
+              icon={<QrcodeOutlined style={{ color: '#2563eb', fontSize: 16 }} />}
+              onClick={() => setIsScannerOpen(true)}
+              style={{
+                height: 46,
+                borderRadius: 10,
+                fontWeight: 600,
+                borderColor: '#cbd5e1',
+              }}
             >
-              Join Group
+              Scan QR Code
             </Button>
-          </Form>
+          </div>
         )}
       </Card>
 
@@ -274,6 +312,14 @@ export const NoGroup: React.FC = () => {
           Sign Out
         </Button>
       </div>
+
+      {/* QR Camera Scanner Modal */}
+      <QRScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScanSuccess={handleScanSuccess}
+        onSwitchToCodeInput={() => setActiveTab('join')}
+      />
 
       {/* Created Group Success Modal */}
       <Modal
@@ -300,7 +346,7 @@ export const NoGroup: React.FC = () => {
         centered
       >
         <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <Title level={4} style={{ margin: 0, color: '#1677ff' }}>
+          <Title level={4} style={{ margin: 0, color: '#2563eb' }}>
             Group Created Successfully!
           </Title>
           <Text type="secondary" style={{ fontSize: 13, display: 'block', margin: '8px 0 16px' }}>
@@ -312,7 +358,7 @@ export const NoGroup: React.FC = () => {
               padding: '16px',
               background: '#f8fafc',
               borderRadius: 12,
-              border: '2px dashed #1677ff',
+              border: '2px dashed #2563eb',
               marginBottom: 16,
             }}
           >
@@ -322,7 +368,7 @@ export const NoGroup: React.FC = () => {
                 fontWeight: 800,
                 fontFamily: 'monospace',
                 letterSpacing: 6,
-                color: '#1677ff',
+                color: '#2563eb',
               }}
             >
               {createdGroupCode}
@@ -330,7 +376,7 @@ export const NoGroup: React.FC = () => {
           </div>
 
           <Button
-            icon={copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
+            icon={copied ? <CheckOutlined style={{ color: '#16a34a' }} /> : <CopyOutlined />}
             onClick={copyCreatedCode}
             size="middle"
             style={{ marginBottom: 8 }}

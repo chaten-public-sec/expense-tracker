@@ -12,31 +12,43 @@ export const BottomNav: React.FC = () => {
   const location = useLocation();
 
   const navItems = [
-    { label: 'Home', path: '/dashboard', icon: <DashboardOutlined style={{ fontSize: 18 }} /> },
-    { label: 'Expenses', path: '/expenses', icon: <FileTextOutlined style={{ fontSize: 18 }} /> },
-    { label: 'Members', path: '/members', icon: <TeamOutlined style={{ fontSize: 18 }} /> },
-    { label: 'History', path: '/history', icon: <HistoryOutlined style={{ fontSize: 18 }} /> },
-    { label: 'Profile', path: '/profile', icon: <UserOutlined style={{ fontSize: 18 }} /> },
+    { label: 'Home', path: '/dashboard', icon: <DashboardOutlined style={{ fontSize: 19 }} /> },
+    { label: 'Expenses', path: '/expenses', icon: <FileTextOutlined style={{ fontSize: 19 }} /> },
+    { label: 'Members', path: '/members', icon: <TeamOutlined style={{ fontSize: 19 }} /> },
+    { label: 'History', path: '/history', icon: <HistoryOutlined style={{ fontSize: 19 }} /> },
+    { label: 'Profile', path: '/profile', icon: <UserOutlined style={{ fontSize: 19 }} /> },
   ];
 
   return (
     <nav
+      className="md:hidden"
       style={{
         position: 'fixed',
         bottom: 0,
         left: 0,
         right: 0,
         zIndex: 90,
-        background: 'rgba(255, 255, 255, 0.98)',
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
         backdropFilter: 'blur(16px)',
-        borderTop: '1px solid #eef2f6',
-        padding: '6px 4px calc(env(safe-area-inset-bottom, 0px) + 6px)',
-        boxShadow: '0 -2px 10px rgba(0,0,0,0.03)',
+        borderTop: '1px solid #e2e8f0',
+        padding: '4px 6px calc(env(safe-area-inset-bottom, 0px) + 6px)',
+        boxShadow: '0 -2px 10px rgba(15, 23, 42, 0.04)',
       }}
     >
-      <div style={{ maxWidth: 480, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-around' }}>
+      <div
+        style={{
+          maxWidth: 480,
+          margin: '0 auto',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-around',
+        }}
+      >
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || (item.path === '/history' && location.pathname === '/settlements');
+          const isActive =
+            location.pathname === item.path ||
+            (item.path === '/history' && location.pathname === '/settlements');
+
           return (
             <NavLink
               key={item.path}
@@ -46,11 +58,11 @@ export const BottomNav: React.FC = () => {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                padding: '4px 10px',
-                borderRadius: 8,
-                color: isActive ? '#1677ff' : '#94a3b8',
+                padding: '4px 8px',
+                borderRadius: 10,
+                color: isActive ? '#2563eb' : '#64748b',
                 transition: 'all 0.15s ease',
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: isActive ? 600 : 500,
                 flex: 1,
               }}
             >
@@ -59,16 +71,17 @@ export const BottomNav: React.FC = () => {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 32,
-                  height: 24,
-                  borderRadius: 12,
-                  background: isActive ? 'rgba(22, 119, 255, 0.1)' : 'transparent',
+                  width: 38,
+                  height: 26,
+                  borderRadius: 14,
+                  backgroundColor: isActive ? 'rgba(37, 99, 235, 0.12)' : 'transparent',
                   marginBottom: 2,
+                  transition: 'background-color 0.15s ease',
                 }}
               >
                 {item.icon}
               </div>
-              <span style={{ fontSize: 11, lineHeight: 1 }}>{item.label}</span>
+              <span style={{ fontSize: 10.5, lineHeight: 1.1 }}>{item.label}</span>
             </NavLink>
           );
         })}
