@@ -1,5 +1,3 @@
-const axios = require('axios');
-
 /**
  * Send FCM Notification to a list of Android FCM registration tokens.
  * @param {string[]} fcmTokens
@@ -22,38 +20,39 @@ const sendFCMNotification = async (fcmTokens, payload) => {
 
   for (const token of fcmTokens) {
     try {
-      const response = await axios.post(
-        'https://fcm.googleapis.com/fcm/send',
-        {
-          to: token,
-          priority: 'high',
-          content_available: true,
-          notification: {
-            title: payload.title || 'SplitWise',
-            body: payload.body || '',
-            icon: 'ic_launcher',
-            color: '#2563eb',
-            android_channel_id: 'splitwise_notifications',
-            sound: 'default',
-          },
-          data: payload.data || {},
+      const fcmBody = JSON.stringify({
+        to: token,
+        priority: 'high',
+        content_available: true,
+        notification: {
+          title: payload.title || 'SplitWise',
+          body: payload.body || '',
+          icon: 'ic_launcher',
+          color: '#2563eb',
+          android_channel_id: 'splitwise_notifications',
+          sound: 'default',
         },
-        {
-          headers: {
-            Authorization: `key=${fcmServerKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 5000,
-        }
-      );
+        data: payload.data || {},
+      });
 
-      if (response.data && response.data.success === 1) {
+      const response = await fetch('https://fcm.googleapis.com/fcm/send', {
+        method: 'POST',
+        headers: {
+          Authorization: `key=${fcmServerKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: fcmBody,
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data && data.success === 1) {
         sent++;
       } else {
         failed++;
         const tokenHash = `${token.substring(0, 8)}...${token.substring(token.length - 6)}`;
-        console.warn(`[FCM Push Warning] Error sending to token ${tokenHash}:`, response.data);
-        if (response.data?.results?.[0]?.error === 'NotRegistered' || response.data?.results?.[0]?.error === 'InvalidRegistration') {
+        console.warn(`[FCM Push Warning] Error sending to token ${tokenHash}:`, data);
+        if (data?.results?.[0]?.error === 'NotRegistered' || data?.results?.[0]?.error === 'InvalidRegistration') {
           const PushSubscription = require('../models/PushSubscription');
           console.log(`📱 [FCM Cleanup] Removing stale FCM token ${tokenHash}`);
           await PushSubscription.deleteOne({ fcmToken: token });
