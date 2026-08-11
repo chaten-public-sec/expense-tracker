@@ -18,6 +18,7 @@ const Members = lazy(() => import('./pages/Members').then(m => ({ default: m.Mem
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const History = lazy(() => import('./pages/History').then(m => ({ default: m.History })));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
+const InspectorDashboard = lazy(() => import('./pages/InspectorDashboard').then(m => ({ default: m.InspectorDashboard })));
 const JoinGroupPage = lazy(() => import('./pages/JoinGroupPage').then(m => ({ default: m.JoinGroupPage })));
 
 import { DesktopSidebar } from './components/layout/DesktopSidebar';
@@ -57,12 +58,16 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
   }
 
   const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
+  const isInspector = user?.isInspector || user?.email === 'inspect@gmail.com';
 
   // Strict Architectural Separation:
   if (isSuperAdmin) {
-    // Super Admin is a global platform administrator and only visits /admin and /profile
     if (location.pathname !== '/admin' && location.pathname !== '/profile') {
       return <Navigate to="/admin" replace />;
+    }
+  } else if (isInspector) {
+    if (location.pathname !== '/inspector' && location.pathname !== '/profile') {
+      return <Navigate to="/inspector" replace />;
     }
   } else {
     // Normal User Flow:
@@ -72,7 +77,7 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
     if (group && location.pathname === '/no-group') {
       return <Navigate to="/dashboard" replace />;
     }
-    if (location.pathname === '/admin') {
+    if (location.pathname === '/admin' || location.pathname === '/inspector') {
       return <Navigate to="/dashboard" replace />;
     }
   }
@@ -270,6 +275,14 @@ export const App: React.FC = () => {
                       element={
                         <ProtectedLayout>
                           <AdminDashboard />
+                        </ProtectedLayout>
+                      }
+                    />
+                    <Route
+                      path="/inspector"
+                      element={
+                        <ProtectedLayout>
+                          <InspectorDashboard />
                         </ProtectedLayout>
                       }
                     />

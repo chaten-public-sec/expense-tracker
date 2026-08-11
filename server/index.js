@@ -140,6 +140,11 @@ const settlementRoutes = require('./routes/settlementRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const inspectorRoutes = require('./routes/inspectorRoutes');
+const { readOnlyInspectorCheck } = require('./middleware/auth');
+
+// Apply read-only guard for inspector account on mutating routes
+app.use(readOnlyInspectorCheck);
 
 // API Routes registered under /api
 app.use('/api/auth', authRoutes);
@@ -149,6 +154,7 @@ app.use('/api/settlements', settlementRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/inspector', inspectorRoutes);
 
 // Fallback Route Aliases (Handles requests if /api prefix was omitted in client config)
 app.use('/auth', authRoutes);
@@ -158,6 +164,7 @@ app.use('/settlements', settlementRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/notifications', notificationRoutes);
 app.use('/admin', adminRoutes);
+app.use('/inspector', inspectorRoutes);
 
 // Health & Ping endpoints for Render / Cron-Job uptime keep-alive
 app.get(['/health', '/api/health'], (req, res) => {

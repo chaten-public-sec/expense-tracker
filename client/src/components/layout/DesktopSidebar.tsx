@@ -28,6 +28,7 @@ export const DesktopSidebar: React.FC = () => {
   const [copied, setCopied] = useState(false);
 
   const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
+  const isInspector = user?.isInspector || user?.email === 'inspect@gmail.com';
 
   const copyInviteCode = () => {
     if (group?.inviteCode) {
@@ -54,6 +55,11 @@ export const DesktopSidebar: React.FC = () => {
     ? [
         { label: 'Admin Console', path: '/admin', icon: <CrownOutlined style={{ fontSize: 17 }} /> },
         { label: 'Admin Profile', path: '/profile', icon: <UserOutlined style={{ fontSize: 17 }} /> },
+      ]
+    : isInspector
+    ? [
+        { label: 'Inspector Console', path: '/inspector', icon: <SafetyCertificateOutlined style={{ fontSize: 17 }} /> },
+        { label: 'Inspector Profile', path: '/profile', icon: <UserOutlined style={{ fontSize: 17 }} /> },
       ]
     : [
         { label: 'Dashboard', path: '/dashboard', icon: <DashboardOutlined style={{ fontSize: 17 }} /> },

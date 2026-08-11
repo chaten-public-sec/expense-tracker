@@ -83,6 +83,7 @@ export const Navbar: React.FC = () => {
   const location = useLocation();
 
   const isSuperAdmin = user?.isSuperAdmin || user?.email === 'admin@gmail.com';
+  const isInspector = user?.isInspector || user?.email === 'inspect@gmail.com';
 
   const copyInviteCode = () => {
     if (group?.inviteCode) {
@@ -122,6 +123,21 @@ export const Navbar: React.FC = () => {
             onClick: () => navigate('/profile'),
           },
         ]
+      : isInspector
+      ? [
+          {
+            key: 'inspector',
+            icon: <SafetyCertificateOutlined style={{ color: '#722ed1' }} />,
+            label: 'Inspector Audit Console',
+            onClick: () => navigate('/inspector'),
+          },
+          {
+            key: 'profile',
+            icon: <UserOutlined />,
+            label: 'Inspector Account',
+            onClick: () => navigate('/profile'),
+          },
+        ]
       : [
           {
             key: 'profile',
@@ -144,6 +160,11 @@ export const Navbar: React.FC = () => {
     ? [
         { label: 'Admin Console', path: '/admin', icon: <CrownOutlined /> },
         { label: 'Admin Profile', path: '/profile', icon: <UserOutlined /> },
+      ]
+    : isInspector
+    ? [
+        { label: 'Inspector Console', path: '/inspector', icon: <SafetyCertificateOutlined /> },
+        { label: 'Inspector Profile', path: '/profile', icon: <UserOutlined /> },
       ]
     : [
         { label: 'Dashboard', path: '/dashboard', icon: <DashboardOutlined /> },
@@ -370,10 +391,15 @@ export const Navbar: React.FC = () => {
             </Space>
           )}
 
-          {/* Super Admin Quick Badge */}
+          {/* Super Admin & Inspector Quick Badges */}
           {isSuperAdmin && (
             <Tag color="gold" icon={<CrownOutlined />} style={{ margin: 0 }}>
               Admin
+            </Tag>
+          )}
+          {isInspector && (
+            <Tag color="purple" icon={<SafetyCertificateOutlined />} style={{ margin: 0 }}>
+              Inspector
             </Tag>
           )}
 

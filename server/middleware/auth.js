@@ -34,4 +34,20 @@ const superAdminOnly = (req, res, next) => {
   return res.status(403).json({ message: 'Access denied: Super Admin privilege required.' });
 };
 
-module.exports = { protect, superAdminOnly };
+const readOnlyInspectorCheck = (req, res, next) => {
+  if (req.user && (req.user.isInspector || req.user.email === 'inspect@gmail.com')) {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      return res.status(403).json({ message: 'Inspector account is in read-only mode. Modifying operations are not permitted.' });
+    }
+  }
+  return next();
+};
+
+const inspectorOnly = (req, res, next) => {
+  if (req.user && (req.user.isInspector || req.user.email === 'inspect@gmail.com' || req.user.isSuperAdmin || req.user.email === 'admin@gmail.com')) {
+    return next();
+  }
+  return res.status(403).json({ message: 'Access denied: Inspector privilege required.' });
+};
+
+module.exports = { protect, superAdminOnly, readOnlyInspectorCheck, inspectorOnly };
