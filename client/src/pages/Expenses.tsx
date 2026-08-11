@@ -23,6 +23,7 @@ import {
   ReloadOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/ui/Toast';
 import { Expense, GroupMember } from '../types';
 import api from '../services/api';
@@ -34,6 +35,7 @@ import { EditExpenseModal } from '../components/modals/EditExpenseModal';
 const { Title, Text } = Typography;
 
 export const Expenses: React.FC = () => {
+  const { user } = useAuth();
   const { showError } = useToast();
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -41,6 +43,7 @@ export const Expenses: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<string>('all');
+  const [memberFilter, setMemberFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('newest');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
@@ -91,7 +94,31 @@ export const Expenses: React.FC = () => {
         exp.paidBy?.fullName?.toLowerCase().includes(query) ||
         (exp.notes && exp.notes.toLowerCase().includes(query));
       const matchesFilter = filterMode === 'all' || exp.paymentMode === filterMode;
-      return matchesSearch && matchesFilter;
+
+      // Member / Person involvement filter
+      let matchesMember = true;
+      if (memberFilter !== 'all') {
+        const targetId = memberFilter === 'me' ? user?._id : memberFilter;
+
+        if (targetId) {
+          const paidById = typeof exp.paidBy === 'object' ? exp.paidBy?._id : exp.paidBy;
+          const isPayer = paidById?.toString() === targetId.toString();
+
+          let isParticipant = false;
+          if (exp.splitType === 'everyone') {
+            isParticipant = true;
+          } else if (exp.splitDetails && Array.isArray(exp.splitDetails)) {
+            isParticipant = exp.splitDetails.some((s) => {
+              const sId = typeof s.user === 'object' ? s.user?._id : s.user;
+              return sId?.toString() === targetId.toString();
+            });
+          }
+
+          matchesMember = isPayer || isParticipant;
+        }
+      }
+
+      return matchesSearch && matchesFilter && matchesMember;
     });
 
     list.sort((a, b) => {
@@ -105,7 +132,7 @@ export const Expenses: React.FC = () => {
     });
 
     return list;
-  }, [expenses, searchTerm, filterMode, sortBy]);
+  }, [expenses, searchTerm, filterMode, memberFilter, sortBy, user]);
 
   const totalExpenseSum = useMemo(() => {
     return processedExpenses.reduce((acc, curr) => acc + curr.amount, 0);
@@ -115,6 +142,22 @@ export const Expenses: React.FC = () => {
     const start = (currentPage - 1) * pageSize;
     return processedExpenses.slice(start, start + pageSize);
   }, [processedExpenses, currentPage]);
+
+  const memberOptions = useMemo(() => {
+    const opts = [
+      { label: '👥 All Members', value: 'all' },
+      { label: '👤 Involving Me (Paid or Owed)', value: 'me' },
+    ];
+    members.forEach((m) => {
+      if (m._id !== user?._id) {
+        opts.push({
+          label: `👤 ${m.fullName}`,
+          value: m._id,
+        });
+      }
+    });
+    return opts;
+  }, [members, user]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -166,14 +209,26 @@ export const Expenses: React.FC = () => {
                 { label: 'Cash', value: 'cash' },
                 { label: 'UPI', value: 'upi' },
               ]}
-              style={{ flex: 1, minWidth: 160 }}
+              style={{ minWidth: 150 }}
               size="middle"
+            />
+
+            <Select
+              value={memberFilter}
+              onChange={(val) => {
+                setMemberFilter(val);
+                setCurrentPage(1);
+              }}
+              style={{ flex: 1, minWidth: 170 }}
+              size="middle"
+              options={memberOptions}
+              placeholder="Filter by Person"
             />
 
             <Select
               value={sortBy}
               onChange={(val) => setSortBy(val)}
-              style={{ width: 130 }}
+              style={{ width: 120 }}
               size="middle"
               options={[
                 { label: 'Newest', value: 'newest' },

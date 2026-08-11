@@ -7,6 +7,7 @@ export interface User {
   qrCodeUrl?: string | null;
   qrCodePublicId?: string | null;
   isSuperAdmin?: boolean;
+  isInspector?: boolean;
   createdAt?: string;
 }
 
