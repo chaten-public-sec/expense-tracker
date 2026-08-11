@@ -124,6 +124,24 @@ const deleteExpenseIndexAsync = async (expenseId, userIds = []) => {
 };
 
 /**
+ * Reindexes all expenses for a specific group into Pinecone.
+ */
+const reindexGroupExpenses = async (groupId) => {
+  try {
+    const expenses = await Expense.find({ groupId }).select('_id');
+    let count = 0;
+    for (const exp of expenses) {
+      await indexExpenseAsync(exp._id);
+      count++;
+    }
+    return { success: true, count };
+  } catch (err) {
+    console.error(`[Pinecone Reindex Group Error]:`, err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+/**
  * Reindexes all expenses across all groups into Pinecone.
  */
 const reindexAllExpenses = async () => {
